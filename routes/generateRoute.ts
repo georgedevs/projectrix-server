@@ -6,7 +6,8 @@ import {
   startProject,
   publishProject,
   getUserSavedProjects,
-  submitUserProject
+  submitUserProject,
+  editProject
 } from '../controller/generateController';
 import { isAuthenticated } from '../middleware/auth';
 
@@ -30,5 +31,8 @@ generateRouter.post('/projects/:projectId/start', startProject);
 generateRouter.post('/projects/:projectId/generate-another', generateAnother);
 
 generateRouter.post('/submit-project', submitUserProject);
+
+// Edit project route
+generateRouter.put('/projects/:projectId/edit', editProject);
 
 export default generateRouter;

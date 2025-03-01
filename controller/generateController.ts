@@ -452,6 +452,7 @@ export const startProject = CatchAsyncError(async (req: Request, res: Response, 
 
 export const getUserSavedProjects = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
+    
     const userId = req.user._id;
     const projects = await GeneratedProject.find({ 
       userId,
@@ -579,6 +580,80 @@ export const submitUserProject = CatchAsyncError(async (req: Request, res: Respo
     });
   } catch (error: any) {
     console.log('\n❌ Error in user project submission:', error);
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
+
+export const editProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    console.log('\n🔄 Starting project update...');
+    const { projectId } = req.params;
+    const userId = req.user._id;
+    
+    const projectData = req.body;
+
+    // Check if project exists and belongs to user
+    const project = await GeneratedProject.findOne({ _id: projectId, userId });
+    if (!project) {
+      return next(new ErrorHandler("Project not found", 404));
+    }
+
+    // Check if project is published - don't allow editing published projects
+    if (project.isPublished) {
+      return next(new ErrorHandler("Published projects cannot be edited", 403));
+    }
+
+    // Process the updates
+    const updatedProject = {
+      title: projectData.title || project.title,
+      subtitle: projectData.subtitle || project.subtitle,
+      description: projectData.description || project.description,
+      technologies: projectData.technologies || project.technologies,
+      complexity: projectData.complexity ? {
+        level: projectData.complexity.level || project.complexity.level,
+        percentage: projectData.complexity.percentage || project.complexity.percentage
+      } : project.complexity,
+      teamSize: projectData.teamSize ? {
+        type: projectData.teamSize.type || project.teamSize.type,
+        count: projectData.teamSize.count || project.teamSize.count
+      } : project.teamSize,
+      duration: projectData.duration ? {
+        type: projectData.duration.type || project.duration.type,
+        estimate: projectData.duration.estimate || project.duration.estimate
+      } : project.duration,
+      category: projectData.category || project.category,
+      features: projectData.features ? {
+        core: projectData.features.core || project.features.core,
+        additional: projectData.features.additional || project.features.additional
+      } : project.features,
+      teamStructure: projectData.teamStructure ? {
+        roles: projectData.teamStructure.roles.map((role: any, index: number) => ({
+          title: role.title || (project.teamStructure.roles[index] ? project.teamStructure.roles[index].title : ""),
+          skills: role.skills || (project.teamStructure.roles[index] ? project.teamStructure.roles[index].skills : []),
+          responsibilities: role.responsibilities || (project.teamStructure.roles[index] ? project.teamStructure.roles[index].responsibilities : []),
+          filled: role.filled !== undefined ? role.filled : 
+                 (project.teamStructure.roles[index] ? project.teamStructure.roles[index].filled : false)
+        }))
+      } : project.teamStructure,
+      learningOutcomes: projectData.learningOutcomes || project.learningOutcomes
+    };
+
+    // Update the project
+    console.log('\n📝 Updating project data in database...');
+    const result = await GeneratedProject.findByIdAndUpdate(
+      projectId,
+      updatedProject,
+      { new: true, runValidators: true }
+    );
+
+    console.log('\n✅ Project update complete!');
+    res.status(200).json({
+      success: true,
+      project: result,
+      message: "Project updated successfully"
+    });
+  } catch (error: any) {
+    console.log('\n❌ Error in project update:', error);
     return next(new ErrorHandler(error.message, 500));
   }
 });
