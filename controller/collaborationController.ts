@@ -9,65 +9,71 @@ import User from '../models/userModel';
 // Submit a collaboration request
 export const submitCollaborationRequest = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { projectId, role, message = "" } = req.body;
-    const userId = req.user._id;
+    const { projectId, role, message } = req.body;
+    const applicantId = req.user._id;
 
-    if (!projectId || !role) {
-      return next(new ErrorHandler("Project ID and role are required", 400));
-    }
+    // Log the received data
+    console.log('Received application request:', { projectId, role, message, applicantId });
 
-    // Check if the project exists and is published
-    const project = await GeneratedProject.findOne({ _id: projectId, isPublished: true });
+    // Validate project exists
+    const project = await GeneratedProject.findById(projectId);
     if (!project) {
-      return next(new ErrorHandler("Project not found or not published", 404));
+      return next(new ErrorHandler("Project not found", 404));
     }
 
-    // Check if the user is the owner of the project
-    if (project.userId.toString() === userId.toString()) {
+    // Get project owner id
+    const publisherId = project.userId;
+
+    // Check if user is the project owner
+    if (applicantId.toString() === publisherId.toString()) {
       return next(new ErrorHandler("You cannot apply to your own project", 400));
     }
 
-    // Check if the role exists in the project
-    const roleExists = project.teamStructure.roles.find(r => r.title === role);
+    // Check if role exists and is available
+    const roleExists = project.teamStructure?.roles?.find(r => r.title === role);
     if (!roleExists) {
-      return next(new ErrorHandler("Selected role does not exist for this project", 400));
+      return next(new ErrorHandler("Role not found in project", 404));
     }
 
-    // Check if the role is already filled
     if (roleExists.filled) {
-      return next(new ErrorHandler("This role has already been filled", 400));
+      return next(new ErrorHandler("This role is already filled", 400));
     }
 
-    // Check if user already applied for this project
+    // Check if user already applied for this role
     const existingRequest = await CollaborationRequest.findOne({
       projectId,
-      applicantId: userId
+      applicantId,
+      role
     });
 
     if (existingRequest) {
-      return next(new ErrorHandler("You have already applied for this project", 400));
+      return next(new ErrorHandler("You have already applied for this role", 400));
     }
 
-    // Get the publisher's ID from the project
-    const publisherId = project.userId;
-
-    // Create a new collaboration request
+    // Create collaboration request
     const collaborationRequest = await CollaborationRequest.create({
       projectId,
-      applicantId: userId,
+      applicantId,
       publisherId,
       role,
-      message,
+      message: message || "",
       status: 'pending',
       appliedAt: new Date()
     });
 
+    // Populate response with user data
+    const populatedRequest = await CollaborationRequest.findById(collaborationRequest._id)
+      .populate('projectId', 'title subtitle technologies teamStructure')
+      .populate('applicantId', 'name username avatar email')
+      .populate('publisherId', 'name username avatar email');
+
     res.status(201).json({
       success: true,
       message: "Collaboration request submitted successfully",
-      collaborationRequest
+      collaborationRequest: populatedRequest
     });
   } catch (error: any) {
+    console.error('Error submitting collaboration request:', error);
     return next(new ErrorHandler(error.message, 500));
   }
 });

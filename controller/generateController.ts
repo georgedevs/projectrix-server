@@ -472,8 +472,10 @@ export const getUserSavedProjects = CatchAsyncError(async (req: Request, res: Re
 export const publishProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
-    const { selectedRole } = req.body; // Get the selected role from request body
+    const { selectedRole } = req.body; // Make sure this is being received correctly
     const userId = req.user._id;
+
+    console.log('Publishing project with selected role:', selectedRole); // Add logging
 
     // Find the project
     const project = await GeneratedProject.findOne({ _id: projectId, userId });
@@ -489,9 +491,8 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
     // Set the project as published
     project.isPublished = true;
 
-    // If role is selected and project has roles defined
-    if (selectedRole && project.teamStructure && project.teamStructure.roles && project.teamStructure.roles.length > 0) {
-      // Find the selected role
+    // Handle role selection properly
+    if (selectedRole && project.teamStructure && project.teamStructure.roles) {
       const roleIndex = project.teamStructure.roles.findIndex(role => role.title === selectedRole);
       
       if (roleIndex !== -1) {
@@ -511,7 +512,7 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
       }
     }
 
-    // Save the project with updated information
+    // Save the project
     await project.save();
 
     res.status(200).json({
@@ -520,6 +521,7 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
       project
     });
   } catch (error: any) {
+    console.error('Error publishing project:', error); // Add error logging
     return next(new ErrorHandler(error.message, 500));
   }
 });
