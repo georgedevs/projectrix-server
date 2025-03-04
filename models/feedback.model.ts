@@ -3,7 +3,7 @@ import mongoose, { Document, Model, Schema } from "mongoose";
 
 export interface IFeedback extends Document {
   userId: Schema.Types.ObjectId;
-  category: string;
+  category: 'bug' | 'feature' | 'improvement' | 'general';
   title: string;
   description: string;
   rating: number;
@@ -22,8 +22,8 @@ const feedbackSchema: Schema<IFeedback> = new mongoose.Schema({
   },
   category: {
     type: String,
-    required: [true, "Category is required"],
-    enum: ['bug', 'feature', 'improvement', 'general']
+    enum: ['bug', 'feature', 'improvement', 'general'],
+    required: [true, "Category is required"]
   },
   title: {
     type: String,
@@ -41,7 +41,7 @@ const feedbackSchema: Schema<IFeedback> = new mongoose.Schema({
     type: Number,
     min: 1,
     max: 5,
-    default: 3
+    default: 5
   },
   status: {
     type: String,
@@ -53,7 +53,8 @@ const feedbackSchema: Schema<IFeedback> = new mongoose.Schema({
     ref: 'User'
   }],
   tags: [{
-    type: String
+    type: String,
+    trim: true
   }],
   createdAt: {
     type: Date,
@@ -65,10 +66,11 @@ const feedbackSchema: Schema<IFeedback> = new mongoose.Schema({
   }
 });
 
-// Add index for faster queries
-feedbackSchema.index({ userId: 1 });
-feedbackSchema.index({ category: 1 });
+// Add indexes for faster querying
 feedbackSchema.index({ status: 1 });
+feedbackSchema.index({ category: 1 });
+feedbackSchema.index({ userId: 1 });
+feedbackSchema.index({ createdAt: -1 });
 
 const Feedback: Model<IFeedback> = mongoose.model("Feedback", feedbackSchema);
 

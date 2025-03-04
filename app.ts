@@ -19,7 +19,7 @@ app.use(cookieParser());
 
 app.use(cors({
     origin: process.env.ORIGIN,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -32,7 +32,7 @@ app.use("/api/v1",userProfileRouter);
 app.use("/api/v1",messageRouter);
 app.use("/api/v1",collaborationRouter);
 app.use("/api/v1",publishedProjectsRouter);
-app.use("/api/v1/feedback",feedbackRouter);
+app.use("/api/v1",feedbackRouter);
 
 app.get("/test", (req:Request, res:Response, next:NextFunction) => {
     res.status(200).json({

@@ -1,27 +1,27 @@
-// routes/feedbackRoutes.ts
 import express from 'express';
 import { 
   submitFeedback,
-  getAllFeedback,
   getMyFeedback,
   getPublicFeedback,
   upvoteFeedback,
+  getAllFeedback,
   updateFeedbackStatus
 } from '../controller/feedbackController';
 import { isAuthenticated } from '../middleware/auth';
+import { isAdmin } from '../middleware/isAdmin';
 
 const feedbackRouter = express.Router();
 
-// Routes requiring authentication
-feedbackRouter.post('/submit', isAuthenticated, submitFeedback);
-feedbackRouter.get('/my-feedback', isAuthenticated, getMyFeedback);
-feedbackRouter.post('/:feedbackId/upvote', isAuthenticated, upvoteFeedback);
-
-// Admin routes
-feedbackRouter.get('/admin/all', isAuthenticated, getAllFeedback);
-feedbackRouter.patch('/admin/:feedbackId/status', isAuthenticated, updateFeedbackStatus);
-
 // Public routes
-feedbackRouter.get('/public', getPublicFeedback);
+feedbackRouter.get('/feedback/public', getPublicFeedback);
+
+// Authenticated user routes
+feedbackRouter.post('/feedback/submit', isAuthenticated, submitFeedback);
+feedbackRouter.get('/feedback/my-feedback', isAuthenticated, getMyFeedback);
+feedbackRouter.post('/feedback/:feedbackId/upvote', isAuthenticated, upvoteFeedback);
+
+// Admin only routes
+feedbackRouter.get('/feedback/admin/all', isAuthenticated, isAdmin, getAllFeedback);
+feedbackRouter.patch('/feedback/admin/:feedbackId/status', isAuthenticated, isAdmin, updateFeedbackStatus);
 
 export default feedbackRouter;

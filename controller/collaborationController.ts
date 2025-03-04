@@ -9,39 +9,55 @@ import User from '../models/userModel';
 // Submit a collaboration request
 export const submitCollaborationRequest = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if user is authenticated
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
+    const { projectId, role, message = "" } = req.body;
+    const userId = req.user._id;
+
+    if (!projectId || !role) {
+      return next(new ErrorHandler("Project ID and role are required", 400));
     }
 
-    const { projectId, role, message } = req.body;
-    const applicantId = req.user._id;
-
-    // Check if project exists
-    const project = await GeneratedProject.findById(projectId);
+    // Check if the project exists and is published
+    const project = await GeneratedProject.findOne({ _id: projectId, isPublished: true });
     if (!project) {
-      return next(new ErrorHandler("Project not found", 404));
+      return next(new ErrorHandler("Project not found or not published", 404));
     }
 
-    // Verify the role exists in the project
-    const roleExists = project.teamStructure.roles.some(r => r.title === role && !r.filled);
+    // Check if the user is the owner of the project
+    if (project.userId.toString() === userId.toString()) {
+      return next(new ErrorHandler("You cannot apply to your own project", 400));
+    }
+
+    // Check if the role exists in the project
+    const roleExists = project.teamStructure.roles.find(r => r.title === role);
     if (!roleExists) {
-      return next(new ErrorHandler("This role is not available for the project", 400));
+      return next(new ErrorHandler("Selected role does not exist for this project", 400));
+    }
+
+    // Check if the role is already filled
+    if (roleExists.filled) {
+      return next(new ErrorHandler("This role has already been filled", 400));
     }
 
     // Check if user already applied for this project
-    const existingRequest = await CollaborationRequest.findOne({ projectId, applicantId });
+    const existingRequest = await CollaborationRequest.findOne({
+      projectId,
+      applicantId: userId
+    });
+
     if (existingRequest) {
       return next(new ErrorHandler("You have already applied for this project", 400));
     }
 
-    // Create collaboration request
+    // Get the publisher's ID from the project
+    const publisherId = project.userId;
+
+    // Create a new collaboration request
     const collaborationRequest = await CollaborationRequest.create({
       projectId,
-      applicantId,
-      publisherId: project.userId,
+      applicantId: userId,
+      publisherId,
       role,
-      message: message || "",
+      message,
       status: 'pending',
       appliedAt: new Date()
     });
@@ -56,17 +72,12 @@ export const submitCollaborationRequest = CatchAsyncError(async (req: Request, r
   }
 });
 
-// Get my collaboration requests (as an applicant)
+// Get user's collaboration requests
 export const getMyCollaborationRequests = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if user is authenticated
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
-    }
+    const userId = req.user._id;
 
-    const applicantId = req.user._id;
-
-    const requests = await CollaborationRequest.find({ applicantId })
+    const requests = await CollaborationRequest.find({ applicantId: userId })
       .populate({
         path: 'projectId',
         select: 'title subtitle technologies teamStructure'
@@ -86,17 +97,19 @@ export const getMyCollaborationRequests = CatchAsyncError(async (req: Request, r
   }
 });
 
-// Get incoming collaboration requests (as a publisher)
+// Get incoming collaboration requests for projects owned by the user
 export const getIncomingCollaborationRequests = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if user is authenticated
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
-    }
+    const userId = req.user._id;
 
-    const publisherId = req.user._id;
+    // Find all projects owned by the user
+    const projects = await GeneratedProject.find({ userId });
+    const projectIds = projects.map(project => project._id);
 
-    const requests = await CollaborationRequest.find({ publisherId })
+    // Find all collaboration requests for these projects
+    const requests = await CollaborationRequest.find({ 
+      projectId: { $in: projectIds } 
+    })
       .populate({
         path: 'projectId',
         select: 'title subtitle technologies teamStructure'
@@ -119,152 +132,148 @@ export const getIncomingCollaborationRequests = CatchAsyncError(async (req: Requ
 // Update collaboration request status (accept/reject)
 export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if user is authenticated
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
-    }
-
     const { requestId } = req.params;
     const { status } = req.body;
-    const publisherId = req.user._id;
+    const userId = req.user._id;
 
     if (!['accepted', 'rejected'].includes(status)) {
-      return next(new ErrorHandler("Invalid status value", 400));
+      return next(new ErrorHandler("Invalid status. Status must be 'accepted' or 'rejected'", 400));
     }
 
-    // Find request and check if the user is the publisher
+    // Find the request
     const request = await CollaborationRequest.findById(requestId);
-    
     if (!request) {
       return next(new ErrorHandler("Collaboration request not found", 404));
     }
 
-    if (request.publisherId.toString() !== publisherId.toString()) {
-      return next(new ErrorHandler("You are not authorized to update this request", 403));
+    // Get the project
+    const project = await GeneratedProject.findById(request.projectId);
+    if (!project) {
+      return next(new ErrorHandler("Project not found", 404));
     }
 
-    // Update request status
+    // Verify the user is the owner of the project
+    if (project.userId.toString() !== userId.toString()) {
+      return next(new ErrorHandler("You don't have permission to update this request", 403));
+    }
+
+    // Update the request status
     request.status = status;
     await request.save();
 
-    // If accepted, add user to project team members and update the role as filled
+    let rejectedRequests = [];
+
+    // If accepting a request, mark the role as filled and reject other pending requests for the same role
     if (status === 'accepted') {
-      // Update project
-      const project = await GeneratedProject.findById(request.projectId);
-      if (!project) {
-        return next(new ErrorHandler("Project not found", 404));
-      }
-
       // Find the role in the project
-      const roleIndex = project.teamStructure.roles.findIndex(r => r.title === request.role);
+      const roleIndex = project.teamStructure.roles.findIndex(
+        r => r.title === request.role
+      );
+
       if (roleIndex !== -1) {
+        // Mark the role as filled
         project.teamStructure.roles[roleIndex].filled = true;
+        await project.save();
+
+        // Add user to project team members
+        const teamMember = {
+          userId: request.applicantId,
+          role: request.role,
+          joinedAt: new Date()
+        };
+
+        // Check if teamMembers array exists
+        if (!project.teamMembers) {
+          project.teamMembers = [];
+        }
+
+        // Add the new team member
+        project.teamMembers.push(teamMember);
+        await project.save();
+
+        // Update user's collaboration count
+        await User.findByIdAndUpdate(
+          request.applicantId,
+          { $inc: { projectsCollaborated: 1 } }
+        );
+
+        // Find all other pending requests for the same role and reject them
+        const otherRequests = await CollaborationRequest.find({
+          projectId: request.projectId,
+          role: request.role,
+          status: 'pending',
+          _id: { $ne: requestId }
+        });
+
+        // Reject all other pending requests for this role
+        if (otherRequests.length > 0) {
+          rejectedRequests = await Promise.all(
+            otherRequests.map(async (req) => {
+              req.status = 'rejected';
+              await req.save();
+              return req;
+            })
+          );
+        }
       }
-
-      // Add to team members
-      if (!project.teamMembers) {
-        project.teamMembers = [];
-      }
-      
-      project.teamMembers.push({
-        userId: request.applicantId,
-        role: request.role,
-        joinedAt: new Date()
-      });
-
-      await project.save();
-
-      // Update applicant's collaborations
-      await User.findByIdAndUpdate(request.applicantId, {
-        $push: {
-          collaborations: {
-            projectId: request.projectId,
-            role: request.role,
-            joinedAt: new Date()
-          }
-        },
-        $inc: { projectsCollaborated: 1 }
-      });
-
-      // Reject all other pending requests for the same role
-      await CollaborationRequest.updateMany({
-        projectId: request.projectId,
-        role: request.role,
-        status: 'pending',
-        _id: { $ne: requestId }
-      }, {
-        status: 'rejected'
-      });
     }
 
     res.status(200).json({
       success: true,
       message: `Collaboration request ${status}`,
-      request
+      request,
+      rejectedRequests: rejectedRequests.length > 0 ? rejectedRequests : undefined
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }
 });
 
-// Get projects I'm collaborating on
+// Get user's active collaborations
 export const getMyCollaborations = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if user is authenticated
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
-    }
-    
     const userId = req.user._id;
-    
-    // Get user with populated collaborations
-    const user = await User.findById(userId)
-      .populate({
-        path: 'collaborations.projectId',
-        select: 'title subtitle description technologies complexity teamStructure isPublished userId teamMembers'
-      });
 
-    if (!user) {
-      return next(new ErrorHandler("User not found", 404));
-    }
+    // Find accepted collaboration requests where this user is the applicant
+    const acceptedRequests = await CollaborationRequest.find({
+      applicantId: userId,
+      status: 'accepted'
+    }).populate({
+      path: 'projectId',
+      populate: {
+        path: 'userId',
+        select: 'name username avatar email'
+      }
+    });
 
-    // Get the populated collaborations
-    const userCollaborations = user.collaborations || [];
-    
-    // For each collaboration, we need to get the owner's info
-    const enhancedCollaborations = await Promise.all(
-      userCollaborations.filter(collab => collab.projectId).map(async (collab) => {
-        const project = collab.projectId;
-        
-        // Get the owner info
-        const owner = await User.findById(project.userId).select('name username avatar');
-        
-        // Get team members info
-        const teamMembers = await Promise.all(
-          (project.teamMembers || []).map(async (member) => {
-            const memberUser = await User.findById(member.userId).select('name username avatar');
-            return {
-              ...member.toObject(),
-              userDetails: memberUser
-            };
-          })
-        );
-        
-        // Format the project with owner info
-        return {
-          ...collab.toObject(),
-          projectId: {
-            ...project.toObject(),
-            owner,
-            teamMembers
-          }
-        };
-      })
-    );
+    // Find all projects this user has published that have team members
+    const ownedProjects = await GeneratedProject.find({
+      userId,
+      isPublished: true,
+      'teamMembers.0': { $exists: true }
+    }).populate({
+      path: 'teamMembers.userId',
+      select: 'name username avatar email'
+    });
+
+    const collaborations = [
+      ...acceptedRequests.map(req => ({
+        type: 'member',
+        project: req.projectId,
+        role: req.role,
+        joinedAt: req.appliedAt
+      })),
+      ...ownedProjects.map(project => ({
+        type: 'owner',
+        project,
+        role: project.teamStructure.roles.find(r => r.filled)?.title || 'Owner',
+        teamMembers: project.teamMembers
+      }))
+    ];
 
     res.status(200).json({
       success: true,
-      collaborations: enhancedCollaborations
+      collaborations
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));

@@ -472,19 +472,52 @@ export const getUserSavedProjects = CatchAsyncError(async (req: Request, res: Re
 export const publishProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
+    const { selectedRole } = req.body; // Get the selected role from request body
     const userId = req.user._id;
 
+    // Find the project
     const project = await GeneratedProject.findOne({ _id: projectId, userId });
     if (!project) {
       return next(new ErrorHandler("Project not found", 404));
     }
 
+    // If the project is already published, return error
+    if (project.isPublished) {
+      return next(new ErrorHandler("Project is already published", 400));
+    }
+
+    // Set the project as published
     project.isPublished = true;
+
+    // If role is selected and project has roles defined
+    if (selectedRole && project.teamStructure && project.teamStructure.roles && project.teamStructure.roles.length > 0) {
+      // Find the selected role
+      const roleIndex = project.teamStructure.roles.findIndex(role => role.title === selectedRole);
+      
+      if (roleIndex !== -1) {
+        // Mark the selected role as filled
+        project.teamStructure.roles[roleIndex].filled = true;
+        
+        // Add the user as a team member with the selected role
+        if (!project.teamMembers) {
+          project.teamMembers = [];
+        }
+        
+        project.teamMembers.push({
+          userId,
+          role: selectedRole,
+          joinedAt: new Date()
+        });
+      }
+    }
+
+    // Save the project with updated information
     await project.save();
 
     res.status(200).json({
       success: true,
-      message: "Project published successfully"
+      message: "Project published successfully",
+      project
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));

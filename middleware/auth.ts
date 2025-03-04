@@ -45,7 +45,7 @@ export interface UserDocument {
   skills: string[];
   projectIdeasLeft?: number;
   projectsGenerated?: number;
-  // Add other user properties as needed
+  role:string;
 }
 
 // Declare request type extension
@@ -59,6 +59,24 @@ declare global {
 
 export const isAuthenticated = async (req: Request, res: Response, next: NextFunction) => {
   try {
+
+    const publicRoutes = [
+      '/published-projects',
+      '/published-projects/technologies',
+      '/published-projects/roles'
+    ];
+
+    // Get the path without query parameters
+    const path = req.path.split('?')[0];
+    
+    // Check if the current path is a public route or starts with '/published-projects/'
+    const isPublicRoute = publicRoutes.includes(path) || 
+                          path.startsWith('/published-projects/');
+    
+    if (isPublicRoute) {
+      return next(); // Skip authentication for public routes
+    }
+    
     const token = req.headers.authorization?.split('Bearer ')[1];
     
     if (!token) {
