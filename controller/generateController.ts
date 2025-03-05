@@ -6,6 +6,11 @@ import OpenAI from 'openai';
 import GeneratedProject from '../models/generateProject.model';
 import { verifyFirebaseToken } from '../utils/fbauth';
 import User from '../models/userModel';
+import {
+  createProjectGeneratedActivity,
+  createProjectSavedActivity,
+  createProjectPublishedActivity
+} from '../utils/activityUtils';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -254,6 +259,12 @@ export const generateProject = CatchAsyncError(async (req: Request, res: Respons
       learningOutcomes: mockProjectData.learningOutcomes
     });
 
+    await createProjectGeneratedActivity(
+      req.user._id.toString(),
+      project._id.toString(),
+      project.title
+    );
+
   // Update user's stats
     await User.findByIdAndUpdate(user._id, {
       $inc: { 
@@ -426,6 +437,12 @@ export const startProject = CatchAsyncError(async (req: Request, res: Response, 
     project.isSaved = true;
     await project.save();
 
+    await createProjectSavedActivity(
+      req.user._id.toString(),
+      projectId,
+      project.title
+    );
+
     // Update user's saved projects count if needed
     await User.findByIdAndUpdate(userId, {
       $addToSet: { 
@@ -514,6 +531,12 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
 
     // Save the project
     await project.save();
+
+    await createProjectPublishedActivity(
+      req.user._id.toString(),
+      projectId,
+      project.title
+    );
 
     res.status(200).json({
       success: true,

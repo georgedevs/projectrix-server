@@ -4,6 +4,7 @@ import { CatchAsyncError } from '../middleware/catchAsyncErrors';
 import ErrorHandler from '../utils/ErrorHandler';
 import Feedback from '../models/feedback.model';
 import User from '../models/userModel';
+import { createFeedbackResponseActivity } from '../utils/activityUtils';
 
 // Submit new feedback
 export const submitFeedback = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -209,6 +210,13 @@ export const updateFeedbackStatus = CatchAsyncError(async (req: Request, res: Re
     if (!feedback) {
       return next(new ErrorHandler("Feedback not found", 404));
     }
+
+    await createFeedbackResponseActivity(
+      feedback.userId.toString(),
+      feedback._id.toString(),
+      feedback.title,
+      status
+    );
 
     res.status(200).json({
       success: true,

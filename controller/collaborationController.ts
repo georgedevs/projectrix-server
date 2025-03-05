@@ -5,6 +5,10 @@ import ErrorHandler from '../utils/ErrorHandler';
 import CollaborationRequest from '../models/collaborationRequest.model';
 import GeneratedProject from '../models/generateProject.model';
 import User from '../models/userModel';
+import {
+  createCollaborationRequestActivity,
+  createCollaborationResponseActivity
+} from '../utils/activityUtils';
 
 // Submit a collaboration request
 export const submitCollaborationRequest = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -21,6 +25,7 @@ export const submitCollaborationRequest = CatchAsyncError(async (req: Request, r
       return next(new ErrorHandler("Project not found", 404));
     }
 
+    const projectTitle = project.title;
     // Get project owner id
     const publisherId = project.userId;
 
@@ -66,6 +71,17 @@ export const submitCollaborationRequest = CatchAsyncError(async (req: Request, r
       .populate('projectId', 'title subtitle technologies teamStructure')
       .populate('applicantId', 'name username avatar email')
       .populate('publisherId', 'name username avatar email');
+
+      const applicant = await User.findById(applicantId);
+      const applicantName = applicant.name;
+
+      await createCollaborationRequestActivity(
+        publisherId.toString(),
+        collaborationRequest._id.toString(),
+        applicantName,
+        projectTitle,
+        role
+      );
 
     res.status(201).json({
       success: true,
@@ -223,7 +239,17 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
         }
       }
     }
+    const publisher = await User.findById(userId);
 
+    await createCollaborationResponseActivity(
+      request.applicantId.toString(),
+      request._id.toString(),
+      publisher.name,
+      project.title,
+      request.role,
+      'rejected'
+    );
+    
     res.status(200).json({
       success: true,
       message: `Collaboration request ${status}`,

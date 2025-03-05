@@ -5,6 +5,7 @@ import ErrorHandler from '../utils/ErrorHandler';
 import UserProfile from '../models/userProfile.model';
 import User from '../models/userModel';
 import GeneratedProject from '../models/generateProject.model';
+import { createProfileUpdateActivity } from '../utils/activityUtils';
 
 // Get or create user profile
 export const getUserProfile = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -83,6 +84,8 @@ export const updateUserProfile = CatchAsyncError(async (req: Request, res: Respo
         { new: true }
       );
     }
+    
+    await createProfileUpdateActivity(userId.toString());
 
     // Update user's skills in the User model as well
     if (sanitizedUpdates.skills) {
