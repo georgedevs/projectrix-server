@@ -46,7 +46,7 @@ export const createDiscordChannel = CatchAsyncError(async (req: Request, res: Re
         
         return res.status(200).json({
           success: true,
-          message: "Discord channel already exists, invite link refreshed",
+          message: "Discord channel already exists, invite link refreshed. This link will give you access to a private project channel.",
           inviteLink: newInvite
         });
       } else {
@@ -71,7 +71,7 @@ export const createDiscordChannel = CatchAsyncError(async (req: Request, res: Re
 
     res.status(201).json({
       success: true,
-      message: "Discord channel created successfully",
+      message: "Discord channel created successfully. This link will give you access to a private project channel.",
       inviteLink: discordChannel.inviteLink
     });
   } catch (error: any) {
@@ -116,6 +116,7 @@ export const getDiscordInvite = CatchAsyncError(async (req: Request, res: Respon
 
     res.status(200).json({
       success: true,
+      message: "Invite link generated. This link will give you access to a private project channel.",
       inviteLink: project.discordInviteLink
     });
   } catch (error: any) {

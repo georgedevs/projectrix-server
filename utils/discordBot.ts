@@ -1,5 +1,5 @@
 // utils/discordBot.ts
-import { Client, GatewayIntentBits, ChannelType, TextChannel } from 'discord.js';
+import { Client, GatewayIntentBits, ChannelType, TextChannel, PermissionFlagsBits, OverwriteType } from 'discord.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -7,6 +7,7 @@ dotenv.config();
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID; // Your server ID
 const DISCORD_CATEGORY_ID = process.env.DISCORD_CATEGORY_ID; // Category for project channels
+const DISCORD_ADMIN_ROLE_ID = process.env.DISCORD_ADMIN_ROLE_ID; // Admin role ID
 
 if (!DISCORD_BOT_TOKEN || !DISCORD_GUILD_ID) {
   console.error('Discord bot configuration missing. Check your environment variables.');
@@ -17,7 +18,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildInvites,  // Added for invite management
+    GatewayIntentBits.GuildInvites,
   ]
 });
 
@@ -65,14 +66,67 @@ export const createProjectChannel = async (projectId: string, projectTitle: stri
       console.log(`Channel ${channelName} already exists, using existing channel`);
       channel = existingChannel;
     } else {
-      // Create a text channel
+      // Create a text channel with private permissions
       channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: DISCORD_CATEGORY_ID, // Optional: Place in a category
         topic: `Collaboration channel for project: ${projectTitle} (ID: ${projectId})`,
+        // Set initial permissions to make channel private
+        permissionOverwrites: [
+          // Deny access to everyone by default
+          {
+            id: guild.roles.everyone.id,
+            deny: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory
+            ],
+            type: OverwriteType.Role
+          },
+          // Allow admins to see and manage the channel
+          ...(DISCORD_ADMIN_ROLE_ID ? [{
+            id: DISCORD_ADMIN_ROLE_ID,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.ManageChannels,
+              PermissionFlagsBits.ManageMessages
+            ],
+            type: OverwriteType.Role
+          }] : []),
+          // Allow bot to manage the channel
+          {
+            id: client.user.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.ManageChannels,
+              PermissionFlagsBits.ManageMessages,
+              PermissionFlagsBits.CreateInstantInvite
+            ],
+            type: OverwriteType.Member
+          }
+        ]
       });
-      console.log(`Created new channel: ${channel.name}`);
+      
+      // Send welcome message
+      await channel.send({
+        content: `# Welcome to the ${projectTitle} Project Channel!
+
+This is a private channel for collaborators on the ${projectTitle} project. 
+
+**Important Information:**
+- This channel is private and only visible to invited project members
+- New members joining via invite will automatically be granted access to this channel only
+- Please be respectful and follow project communication guidelines
+
+Happy collaborating! 🚀`
+      });
+      
+      console.log(`Created new private channel: ${channel.name}`);
     }
 
     // Delete existing invites for this channel to avoid clutter
@@ -80,6 +134,7 @@ export const createProjectChannel = async (projectId: string, projectTitle: stri
     await Promise.all(existingInvites.map(invite => invite.delete('Creating fresh permanent invite')));
 
     // Create an invite link that doesn't expire and has unlimited uses
+    // Remove problematic targetType parameter
     const invite = await channel.createInvite({
       maxAge: 0, // 0 = never expires
       maxUses: 0, // 0 = unlimited uses
@@ -123,6 +178,7 @@ export const refreshInviteLink = async (channelId: string, projectTitle: string)
     await Promise.all(existingInvites.map(invite => invite.delete('Creating fresh permanent invite')));
 
     // Create a new invite that doesn't expire
+    // Remove problematic targetType parameter
     const invite = await channel.createInvite({
       maxAge: 0, // 0 = never expires
       maxUses: 0, // 0 = unlimited uses

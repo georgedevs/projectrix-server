@@ -67,6 +67,11 @@ export const getPublishedProject = CatchAsyncError(async (req: Request, res: Res
         path: 'userId',
         select: 'name username avatar email',
         model: User
+      })
+      .populate({
+        path: 'teamMembers.userId',
+        select: 'name username avatar email',
+        model: User
       });
     
     if (!project) {
