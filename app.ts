@@ -12,6 +12,7 @@ import messageRouter from "./routes/messageRoutes";
 import collaborationRouter from "./routes/collaborationRoutes";
 import publishedProjectsRouter from "./routes/publishedProjectsRoutes";
 import feedbackRouter from "./routes/feedbackRoutes";
+import discordRouter from "./routes/discordRoutes";
 
 app.use(express.json({limit:"50mb"}));
 
@@ -33,6 +34,7 @@ app.use("/api/v1",messageRouter);
 app.use("/api/v1",collaborationRouter);
 app.use("/api/v1",publishedProjectsRouter);
 app.use("/api/v1",feedbackRouter);
+app.use("/api/v1", discordRouter);
 
 app.get("/test", (req:Request, res:Response, next:NextFunction) => {
     res.status(200).json({

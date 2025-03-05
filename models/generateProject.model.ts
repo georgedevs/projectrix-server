@@ -47,6 +47,8 @@ export interface IGeneratedProject extends Document {
   isSaved: boolean;
   isPublished: boolean;
   createdAt: Date;
+  discordChannelId?: string;
+  discordInviteLink?: string;
 }
 
 const generatedProjectSchema = new Schema<IGeneratedProject>({
@@ -139,6 +141,12 @@ const generatedProjectSchema = new Schema<IGeneratedProject>({
         default: false // Default to not filled
       }
     }]
+  },
+  discordChannelId: {
+    type: String
+  },
+  discordInviteLink: {
+    type: String
   },
   teamMembers: [{
     userId: {
