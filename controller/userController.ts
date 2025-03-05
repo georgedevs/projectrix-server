@@ -83,7 +83,7 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
     });
     return next(new ErrorHandler(error.message || 'Authentication failed', error.statusCode || 400));
   }
-});
+}); 
 
 // Logout user
 export const logout = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {

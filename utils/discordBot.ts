@@ -66,37 +66,21 @@ export const createProjectChannel = async (projectId: string, projectTitle: stri
       console.log(`Channel ${channelName} already exists, using existing channel`);
       channel = existingChannel;
     } else {
-      // Create a text channel with private permissions
+      // Create channel with simplified permission structure
       channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: DISCORD_CATEGORY_ID, // Optional: Place in a category
         topic: `Collaboration channel for project: ${projectTitle} (ID: ${projectId})`,
-        // Set initial permissions to make channel private
+        // Set initial permissions - SIMPLIFIED VERSION
         permissionOverwrites: [
-          // Deny access to everyone by default
+          // By default, @everyone can't see the channel
           {
             id: guild.roles.everyone.id,
-            deny: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory
-            ],
+            deny: [PermissionFlagsBits.ViewChannel],
             type: OverwriteType.Role
           },
-          // Allow admins to see and manage the channel
-          ...(DISCORD_ADMIN_ROLE_ID ? [{
-            id: DISCORD_ADMIN_ROLE_ID,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory,
-              PermissionFlagsBits.ManageChannels,
-              PermissionFlagsBits.ManageMessages
-            ],
-            type: OverwriteType.Role
-          }] : []),
-          // Allow bot to manage the channel
+          // Bot needs all permissions to manage the channel
           {
             id: client.user.id,
             allow: [
@@ -120,7 +104,7 @@ This is a private channel for collaborators on the ${projectTitle} project.
 
 **Important Information:**
 - This channel is private and only visible to invited project members
-- New members joining via invite will automatically be granted access to this channel only
+- All team members can send messages and read history in this channel
 - Please be respectful and follow project communication guidelines
 
 Happy collaborating! 🚀`
@@ -133,13 +117,12 @@ Happy collaborating! 🚀`
     const existingInvites = await channel.fetchInvites();
     await Promise.all(existingInvites.map(invite => invite.delete('Creating fresh permanent invite')));
 
-    // Create an invite link that doesn't expire and has unlimited uses
-    // Remove problematic targetType parameter
+    // Create an invite link that doesn't expire, has unlimited uses, and GRANTS the right permissions
     const invite = await channel.createInvite({
       maxAge: 0, // 0 = never expires
       maxUses: 0, // 0 = unlimited uses
       unique: true,
-      temporary: false, // Don't kick after disconnect
+      temporary: false, // IMPORTANT: This must be false so permissions remain after disconnect
       reason: `Project collaboration channel for ${projectTitle}`
     });
 
