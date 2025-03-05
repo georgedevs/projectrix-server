@@ -2,19 +2,19 @@
 import express from 'express';
 import { 
   createDiscordChannel,
-  getDiscordInvite
+  getDiscordInvite,
+  initDiscordOAuth,
+  handleDiscordCallback
 } from '../controller/discordController';
 import { isAuthenticated } from '../middleware/auth';
 
 const discordRouter = express.Router();
 
-// All routes require authentication
-discordRouter.use(isAuthenticated);
+// OAuth routes
+discordRouter.get('/discord/oauth/:projectId', isAuthenticated, initDiscordOAuth);
+discordRouter.get('/discord/callback', handleDiscordCallback);
 
-// Create a Discord channel for a project
-discordRouter.post('/discord/channel/:projectId', createDiscordChannel);
-
-// Get Discord invite link for a project
-discordRouter.get('/discord/invite/:projectId', getDiscordInvite);
+discordRouter.post('/discord/channel/:projectId', isAuthenticated, createDiscordChannel);
+discordRouter.get('/discord/invite/:projectId', isAuthenticated, getDiscordInvite);
 
 export default discordRouter;

@@ -5,7 +5,8 @@ import {
   getUnreadCount,
   markActivityAsRead,
   markAllAsRead,
-  deleteActivity
+  deleteActivity,
+  clearAllActivities
 } from '../controller/activityController';
 import { isAuthenticated } from '../middleware/auth';
 
@@ -28,5 +29,8 @@ activityRouter.patch('/activities/mark-all-read', markAllAsRead);
 
 // Delete an activity
 activityRouter.delete('/activities/:activityId', deleteActivity);
+
+//delete all activities
+activityRouter.delete('/activities', clearAllActivities);
 
 export default activityRouter;

@@ -247,7 +247,7 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
       publisher.name,
       project.title,
       request.role,
-      'rejected'
+      status
     );
     
     res.status(200).json({

@@ -5,10 +5,17 @@ import ErrorHandler from '../utils/ErrorHandler';
 import GeneratedProject from '../models/generateProject.model';
 import User from '../models/userModel';
 
-// Get all published projects with optional filtering
+// Get all published projects with optional filtering and pagination
 export const getPublishedProjects = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { technology, complexity, role } = req.query;
+    const { technology, complexity, role, page = 1, limit = 12 } = req.query;
+    
+    // Convert page and limit to numbers
+    const pageNumber = parseInt(page as string, 10);
+    const limitNumber = parseInt(limit as string, 10);
+    
+    // Calculate skip for pagination
+    const skip = (pageNumber - 1) * limitNumber;
     
     // Base query
     const query: any = { isPublished: true };
@@ -29,14 +36,19 @@ export const getPublishedProjects = CatchAsyncError(async (req: Request, res: Re
       };
     }
     
-    // Fetch projects with populated publisher info
+    // Get total count for pagination
+    const totalCount = await GeneratedProject.countDocuments(query);
+    
+    // Fetch projects with populated publisher info, with pagination
     const projects = await GeneratedProject.find(query)
       .populate({
         path: 'userId',
         select: 'name username avatar email',
         model: User
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNumber);
     
     // Format response to include publisher info
     const formattedProjects = projects.map(project => {
@@ -50,6 +62,9 @@ export const getPublishedProjects = CatchAsyncError(async (req: Request, res: Re
     res.status(200).json({
       success: true,
       count: formattedProjects.length,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limitNumber),
+      currentPage: pageNumber,
       projects: formattedProjects
     });
   } catch (error: any) {

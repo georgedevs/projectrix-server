@@ -30,6 +30,8 @@ export interface IUser extends Document {
   planExpiryDate?: Date;
   startedProjects: IStartedProject[];
   collaborations: ICollaboration[];
+  discordId?: string;
+  discordUsername?: string;
   comparePassword(password: string): Promise<boolean>;
   SignAccessToken(): string;
   SignRefreshToken(): string;
@@ -92,6 +94,13 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
     type: String,
     enum: ["free", "pro"],
     default: "free"
+  },
+  discordId: { 
+    type: String, 
+    sparse: true 
+  },
+  discordUsername: { 
+    type: String 
   },
   projectIdeasLeft: {
     type: Number,

@@ -63,15 +63,17 @@ export const isAuthenticated = async (req: Request, res: Response, next: NextFun
     const publicRoutes = [
       '/published-projects',
       '/published-projects/technologies',
-      '/published-projects/roles'
+      '/published-projects/roles',
+      '/discord/callback'  
     ];
 
     // Get the path without query parameters
     const path = req.path.split('?')[0];
     
-    // Check if the current path is a public route or starts with '/published-projects/'
+    // Check if the current path is a public route 
     const isPublicRoute = publicRoutes.includes(path) || 
-                          path.startsWith('/published-projects/');
+    path.startsWith('/published-projects/') ||
+    path.startsWith('/discord/callback'); 
     
     if (isPublicRoute) {
       return next(); // Skip authentication for public routes

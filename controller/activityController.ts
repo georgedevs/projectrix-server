@@ -170,3 +170,19 @@ export const deleteActivity = CatchAsyncError(async (req: Request, res: Response
     return next(new ErrorHandler(error.message, 500));
   }
 });
+
+export const clearAllActivities = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user._id;
+      
+      // Delete all activities for this user
+      await Activity.deleteMany({ userId });
+      
+      res.status(200).json({
+        success: true,
+        message: "All notifications cleared successfully"
+      });
+    } catch (error: any) {
+      return next(new ErrorHandler(error.message, 500));
+    }
+  });
