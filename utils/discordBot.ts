@@ -17,6 +17,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildInvites,  // Added for invite management
   ]
 });
 
@@ -54,21 +55,40 @@ export const createProjectChannel = async (projectId: string, projectTitle: stri
     // Sanitize project title for channel name (Discord channel names must be lowercase, no spaces)
     const channelName = `project-${projectId.substring(0, 8)}-${projectTitle.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 20)}`;
 
-    // Create a text channel
-    const channel = await guild.channels.create({
-      name: channelName,
-      type: ChannelType.GuildText,
-      parent: DISCORD_CATEGORY_ID, // Optional: Place in a category
-      topic: `Collaboration channel for project: ${projectTitle} (ID: ${projectId})`,
-    });
+    // Check if channel already exists
+    const existingChannel = guild.channels.cache.find(ch => 
+      ch.name === channelName && ch.type === ChannelType.GuildText
+    ) as TextChannel;
 
-    // Create an invite link that doesn't expire
-    const invite = await (channel as TextChannel).createInvite({
+    let channel;
+    if (existingChannel) {
+      console.log(`Channel ${channelName} already exists, using existing channel`);
+      channel = existingChannel;
+    } else {
+      // Create a text channel
+      channel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        parent: DISCORD_CATEGORY_ID, // Optional: Place in a category
+        topic: `Collaboration channel for project: ${projectTitle} (ID: ${projectId})`,
+      });
+      console.log(`Created new channel: ${channel.name}`);
+    }
+
+    // Delete existing invites for this channel to avoid clutter
+    const existingInvites = await channel.fetchInvites();
+    await Promise.all(existingInvites.map(invite => invite.delete('Creating fresh permanent invite')));
+
+    // Create an invite link that doesn't expire and has unlimited uses
+    const invite = await channel.createInvite({
       maxAge: 0, // 0 = never expires
       maxUses: 0, // 0 = unlimited uses
       unique: true,
+      temporary: false, // Don't kick after disconnect
       reason: `Project collaboration channel for ${projectTitle}`
     });
+
+    console.log(`Created invite link: https://discord.gg/${invite.code}`);
 
     // Return channel ID and invite link
     return {
@@ -98,13 +118,20 @@ export const refreshInviteLink = async (channelId: string, projectTitle: string)
       throw new Error('Channel not found');
     }
 
+    // Delete existing invites for this channel
+    const existingInvites = await channel.fetchInvites();
+    await Promise.all(existingInvites.map(invite => invite.delete('Creating fresh permanent invite')));
+
+    // Create a new invite that doesn't expire
     const invite = await channel.createInvite({
-      maxAge: 0,
-      maxUses: 0,
+      maxAge: 0, // 0 = never expires
+      maxUses: 0, // 0 = unlimited uses
       unique: true,
+      temporary: false, // Don't kick after disconnect
       reason: `Refreshed invite for project: ${projectTitle}`
     });
 
+    console.log(`Refreshed invite link: https://discord.gg/${invite.code}`);
     return `https://discord.gg/${invite.code}`;
   } catch (error) {
     console.error('Error refreshing invite link:', error);

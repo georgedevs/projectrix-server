@@ -239,6 +239,7 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
 export const getMyCollaborations = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user._id;
+    console.log(`Getting collaborations for user ${userId}`);
 
     // Find accepted collaboration requests where this user is the applicant
     const acceptedRequests = await CollaborationRequest.find({
@@ -246,35 +247,71 @@ export const getMyCollaborations = CatchAsyncError(async (req: Request, res: Res
       status: 'accepted'
     }).populate({
       path: 'projectId',
-      populate: {
-        path: 'userId',
-        select: 'name username avatar email'
-      }
+      select: 'title subtitle technologies teamStructure teamMembers userId isPublished',
+      populate: [
+        {
+          path: 'userId',
+          select: 'name username avatar email'
+        },
+        {
+          path: 'teamMembers.userId',
+          select: 'name username avatar email'
+        }
+      ]
     });
+
+    console.log(`Found ${acceptedRequests.length} accepted collaboration requests`);
 
     // Find all projects this user has published that have team members
     const ownedProjects = await GeneratedProject.find({
       userId,
-      isPublished: true,
-      'teamMembers.0': { $exists: true }
+      isPublished: true
     }).populate({
       path: 'teamMembers.userId',
       select: 'name username avatar email'
     });
 
+    console.log(`Found ${ownedProjects.length} owned projects`);
+
+    // Ensure proper formatting for consistent data structure
     const collaborations = [
-      ...acceptedRequests.map(req => ({
-        type: 'member',
-        project: req.projectId,
-        role: req.role,
-        joinedAt: req.appliedAt
-      })),
-      ...ownedProjects.map(project => ({
-        type: 'owner',
-        project,
-        role: project.teamStructure.roles.find(r => r.filled)?.title || 'Owner',
-        teamMembers: project.teamMembers
-      }))
+      ...acceptedRequests.map(req => {
+        console.log(`Processing collaboration for project: ${req.projectId.title}`);
+        return {
+          type: 'member',
+          project: {
+            ...req.projectId.toObject(),
+            // Ensure team members are properly formatted
+            teamMembers: (req.projectId.teamMembers || []).map(member => ({
+              userId: member.userId,
+              role: member.role,
+              joinedAt: member.joinedAt
+            }))
+          },
+          role: req.role,
+          joinedAt: req.appliedAt
+        };
+      }),
+      ...ownedProjects.map(project => {
+        console.log(`Processing owned project: ${project.title}`);
+        // Log team members data for debugging
+        if (project.teamMembers && project.teamMembers.length > 0) {
+          console.log('Team members found:', 
+            project.teamMembers.map(m => ({
+              userId: m.userId ? (m.userId._id || m.userId) : 'missing',
+              name: m.userId?.name || 'unknown',
+              role: m.role
+            }))
+          );
+        }
+        
+        return {
+          type: 'owner',
+          project: project.toObject(),
+          role: 'Project Owner',
+          teamMembers: project.teamMembers || []
+        };
+      })
     ];
 
     res.status(200).json({
@@ -282,6 +319,7 @@ export const getMyCollaborations = CatchAsyncError(async (req: Request, res: Res
       collaborations
     });
   } catch (error: any) {
-    return next(new ErrorHandler(error.message, 500));
+    console.error('Error fetching collaborations:', error);
+    return next(new ErrorHandler(error.message || 'Failed to fetch collaborations', 500));
   }
 });
