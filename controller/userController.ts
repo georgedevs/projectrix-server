@@ -1,3 +1,4 @@
+// controller/userController.ts
 import { Request, Response, NextFunction } from 'express';
 import { CatchAsyncError } from '../middleware/catchAsyncErrors';
 import ErrorHandler from '../utils/ErrorHandler';
@@ -50,22 +51,29 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
           projectIdeasLeft: 3, // Default number of free projects
           projectsGenerated: 0,
           createdAt: new Date(),
+          lastLogin: new Date(),
+          role: 'user'
         };
         
         user = await User.create(userData);
         console.log('New user created:', user._id);
       } else {
         console.log('Existing user found:', user._id);
+
+        await user.save();
       }
 
-      // Cache user data in Redis - 24 hours (86400 seconds)
-      await redis.set(githubId, JSON.stringify(user), 'EX', 86400);
+      // Calculate token expiration time
+      // Firebase tokens expire in 1 hour by default
+      const tokenExpiresIn = 3600; // 1 hour in seconds
+
+      // Cache user data in Redis - 1 hour (3600 seconds) to match token expiry
+      await redis.set(githubId, JSON.stringify(user), 'EX', tokenExpiresIn);
 
       res.status(200).json({
         success: true,
         user,
-        // Include token expires info for frontend
-        tokenExpiresIn: 86400, // 24 hours in seconds
+        tokenExpiresIn, // Include token expires info for frontend
       });
     } catch (verificationError: any) {
       console.error('Token Verification Error:', {
@@ -95,9 +103,28 @@ export const logout = CatchAsyncError(async (req: Request, res: Response, next: 
       return next(new ErrorHandler('Not authenticated', 401));
     }
 
+    // Get the token from authorization header
+    const token = req.headers.authorization?.split('Bearer ')[1];
+
     // Remove user data from Redis
     await redis.del(user.githubId);
     console.log('User removed from Redis cache');
+
+    // Add the token to a blacklist in Redis to prevent reuse
+    // The handleLogout middleware should have already blacklisted the token,
+    // but we'll add an additional check here
+    if (token) {
+      const tokenInfo = await verifyFirebaseToken(token).catch(() => null);
+      if (tokenInfo && tokenInfo.exp) {
+        // Calculate token time to live in seconds
+        const ttl = tokenInfo.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          // Store token in blacklist with the same expiry as the token
+          await redis.set(`blacklist:${token}`, '1', 'EX', ttl);
+          console.log(`Token blacklisted for ${ttl} seconds`);
+        }
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -155,6 +182,7 @@ export const updateUserPreferences = CatchAsyncError(async (req: Request, res: R
     if (skills !== undefined) updateData.skills = skills;
     if (bio !== undefined) updateData.bio = bio;
     if (isAvailable !== undefined) updateData.isAvailable = isAvailable;
+    if (contactPreferences !== undefined) updateData.contactPreferences = contactPreferences;
     
     // Update user in database
     const updatedUser = await User.findByIdAndUpdate(
@@ -167,8 +195,8 @@ export const updateUserPreferences = CatchAsyncError(async (req: Request, res: R
       return next(new ErrorHandler('User not found', 404));
     }
     
-    // Update Redis cache
-    await redis.set(user.githubId, JSON.stringify(updatedUser), 'EX', 86400);
+    // Update Redis cache with fresh user data - 1 hour expiry
+    await redis.set(user.githubId, JSON.stringify(updatedUser), 'EX', 3600);
     
     res.status(200).json({
       success: true,
@@ -195,8 +223,8 @@ export const refreshUserCache = CatchAsyncError(async (req: Request, res: Respon
       return next(new ErrorHandler('User not found', 404));
     }
     
-    // Update Redis cache
-    await redis.set(user.githubId, JSON.stringify(freshUser), 'EX', 86400);
+    // Update Redis cache with fresh user data - 1 hour expiry
+    await redis.set(user.githubId, JSON.stringify(freshUser), 'EX', 3600);
     
     res.status(200).json({
       success: true,
@@ -204,5 +232,55 @@ export const refreshUserCache = CatchAsyncError(async (req: Request, res: Respon
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message || 'Failed to refresh user cache', 400));
+  }
+});
+
+// Validate token
+export const validateToken = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Token validation is already handled by isAuthenticated middleware
+    // This route simply confirms that the token is valid
+    
+    res.status(200).json({
+      success: true,
+      message: 'Token is valid',
+      user: req.user
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message || 'Token validation failed', 400));
+  }
+});
+
+// Refresh token
+export const refreshToken = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return next(new ErrorHandler('Please provide a token', 400));
+    }
+    
+    // Verify current token
+    const decodedToken = await verifyFirebaseToken(token);
+    const userId = decodedToken.uid;
+    
+    // Check if user exists
+    const user = await User.findOne({ githubId: userId });
+    
+    if (!user) {
+      return next(new ErrorHandler('User not found', 404));
+    }
+    
+    // Update Redis cache with fresh token expiry - 1 hour
+    await redis.set(userId, JSON.stringify(user), 'EX', 3600);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Token refreshed successfully',
+      user,
+      tokenExpiresIn: 3600 // 1 hour in seconds
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message || 'Token refresh failed', 400));
   }
 });
