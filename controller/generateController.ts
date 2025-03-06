@@ -16,267 +16,587 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-function getPromptFromPreferences(preferences: any) {
-  return `Generate a detailed software project idea based on the following preferences:
-Technologies: ${preferences.technologies.join(', ')}
-Complexity Level: ${preferences.complexity.level} (${preferences.complexity.percentage}%)
-Duration: ${preferences.duration}
-Team Size: ${preferences.teamSize}
-Category: ${preferences.category}
+/**
+ * Generate an optimized prompt for OpenAI based on user preferences
+ */
+function getOptimizedPrompt(preferences: any) {
+  // Extract preferences
+  const { technologies, complexity, duration, teamSize, category, projectTheme } = preferences;
+  
+  // Generate duration text
+  const durationText = duration === 'small' ? 'short-term (1-2 weeks)' : 
+                      duration === 'medium' ? 'medium-term (1-2 months)' : 
+                      'long-term (3+ months)';
+  
+  // Generate team size text
+  const teamSizeText = teamSize === 'solo' ? 'one developer' : 
+                      teamSize === 'small' ? '2-3 team members' : 
+                      '4-6 team members';
+  
+  // Format technologies list if provided
+  const techList = technologies && technologies.length > 0 
+    ? `specifically using these technologies: ${technologies.join(', ')}`
+    : 'using appropriate technologies for this type of project';
+  
+  // Add theme context if provided
+  const themeContext = projectTheme 
+    ? `The theme of the project should be related to "${projectTheme}".`
+    : 'The project should be practical, innovative, and educational.';
+  
+  // Generate category-specific guidance
+  const categoryGuidance = getCategorySpecificGuidance(category, technologies);
+  
+  // Build the main prompt
+  return `Generate a detailed, practical, and innovative ${category} project idea for a ${complexity.level} level (${complexity.percentage}% complexity) team of ${teamSizeText}, estimated to take ${durationText} to complete, ${techList}.
+
+${themeContext}
+
+${categoryGuidance}
+
+Make sure the project is:
+1. Practical and realistic to implement within the given timeframe and team size
+2. Educational and helps team members grow their skills
+3. Appropriately scoped for the complexity level (${complexity.level})
+4. Well-structured with clear responsibilities for each team role
+5. Detailed enough to start implementation with clear requirements
 
 The response should include:
-1. A creative project title
-2. A brief subtitle
-3. A detailed project description
-4. Core features and additional features
-5. Team structure with specific roles, required skills, and responsibilities
-6. Specific learning outcomes for the team
+1. A creative and descriptive project title
+2. A concise subtitle that summarizes the project
+3. A detailed project description (at least 100 words)
+4. Core features (must-have functionality)
+5. Additional features (nice-to-have extensions)
+6. Team structure with specific roles, required skills for each role, and their responsibilities
+7. Learning outcomes for the team members
 
-The complexity should be adjusted based on the percentage within the given level.
-For ${preferences.complexity.level} level at ${preferences.complexity.percentage}%, customize the features and complexity accordingly.
-
-Format the response in JSON with the following structure:
+Format the response in JSON with the following structure EXACTLY:
 {
-  "title": "",
-  "subtitle": "",
-  "description": "",
+  "title": "Project Title",
+  "subtitle": "Brief project summary",
+  "description": "Detailed project description...",
   "features": {
-    "core": [],
-    "additional": []
+    "core": ["Feature 1", "Feature 2", "Feature 3", "Feature 4", "Feature 5"],
+    "additional": ["Feature 1", "Feature 2", "Feature 3", "Feature 4", "Feature 5"]
   },
   "teamStructure": {
     "roles": [
       {
-        "title": "",
-        "skills": [],
-        "responsibilities": []
+        "title": "Role Title",
+        "skills": ["Skill 1", "Skill 2", "Skill 3"],
+        "responsibilities": ["Responsibility 1", "Responsibility 2", "Responsibility 3"]
       }
     ]
   },
-  "learningOutcomes": []
-}`;
+  "learningOutcomes": ["Learning Outcome 1", "Learning Outcome 2", "Learning Outcome 3", "Learning Outcome 4", "Learning Outcome 5"]
+}
+
+Ensure the JSON is properly formatted and can be parsed.`;
+}
+
+/**
+ * Provide category-specific guidance based on project type
+ */
+function getCategorySpecificGuidance(category: string, technologies: string[]) {
+  switch (category) {
+    case 'web':
+      return `For this web application project:
+- Consider both frontend and backend components
+- Include user authentication and data management features
+- Think about UI/UX and responsive design
+- Consider deployment and scalability aspects`;
+
+    case 'mobile':
+      return `For this mobile app project:
+- Consider platform-specific features (iOS/Android)
+- Include offline functionality where appropriate
+- Consider battery and data usage optimization
+- Think about intuitive mobile-friendly UI design`;
+
+    case 'ai':
+      return `For this AI/ML project:
+- Specify the AI/ML models or techniques to be used
+- Include data collection, processing, and validation steps
+- Consider model training, evaluation, and deployment processes
+- Think about ethical implications and bias mitigation`;
+
+    case 'game':
+      return `For this game development project:
+- Define game mechanics, characters, and storyline
+- Include graphics, sound, and UI elements
+- Consider level design and progression
+- Think about performance optimization for target platforms`;
+
+    case 'data':
+      return `For this data science project:
+- Include data collection, cleaning, and preprocessing steps
+- Specify analysis methods and visualization techniques
+- Consider insights generation and reporting
+- Think about deployment of interactive dashboards or reports`;
+
+    default:
+      return `For this project:
+- Define clear scope and objectives
+- Include technical requirements and constraints
+- Consider user needs and experience
+- Think about deployment and maintenance`;
+  }
+}
+
+/**
+ * Validate if the selected technologies make sense for the chosen category
+ */
+function validateTechnologyCategoryPair(technologies: string[], category: string): { valid: boolean; message: string } {
+  // If no technologies are selected, it's always valid
+  if (!technologies || technologies.length === 0) {
+    return { valid: true, message: "" };
+  }
+
+  // Define category-specific technology groups
+  const categoryTechGroups = {
+    web: ['react', 'angular', 'vue', 'svelte', 'nextjs', 'html5', 'css3', 'javascript', 'typescript', 
+          'nodejs', 'express', 'django', 'flask', 'php', 'laravel', 'ruby', 'rails', 'mongodb', 
+          'postgresql', 'mysql', 'firebase', 'graphql', 'tailwindcss', 'bootstrap'],
+    
+    mobile: ['react', 'reactnative', 'flutter', 'swift', 'kotlin', 'java', 'javascript', 'typescript',
+             'firebase', 'redux', 'sqlite', 'mongodb', 'nodejs'],
+    
+    ai: ['python', 'tensorflow', 'pytorch', 'scikit-learn', 'numpy', 'pandas', 'jupyter',
+         'r', 'julia', 'keras', 'opencv', 'nltk', 'spacy', 'huggingface'],
+    
+    game: ['unity', 'unreal', 'godot', 'threejs', 'webgl', 'c#', 'c++', 'javascript', 'python',
+           'playcanvas', 'pixijs', 'phaser'],
+    
+    data: ['python', 'r', 'julia', 'sql', 'tableau', 'powerbi', 'pandas', 'numpy', 'matplotlib',
+           'seaborn', 'plotly', 'scikit-learn', 'jupyter', 'spark', 'hadoop', 'excel', 'postgresql',
+           'mysql', 'mongodb', 'bigquery']
+  };
+  
+  // Check if any selected technology is invalid for the chosen category
+  const invalidTechs = technologies.filter(tech => {
+    // Convert to lowercase for case-insensitive comparison
+    const techLower = tech.toLowerCase();
+    
+    // Check if the technology exists in the category's tech group
+    return !categoryTechGroups[category]?.some(validTech => 
+      validTech.toLowerCase() === techLower ||
+      techLower.includes(validTech.toLowerCase()) || // Check if tech contains valid tech name
+      validTech.includes(techLower) // Check if valid tech contains the tech name
+    );
+  });
+  
+  if (invalidTechs.length > 0) {
+    return { 
+      valid: false, 
+      message: `The following technologies may not be suitable for ${category} development: ${invalidTechs.join(', ')}. Please reconsider your selection or choose a different category.`
+    };
+  }
+  
+  return { valid: true, message: "" };
+}
+
+/**
+ * Extract technologies from AI response if user didn't specify any
+ */
+function extractTechnologiesFromResponse(projectData: any, category: string): string[] {
+  // Collect all technologies mentioned in the roles
+  const mentionedTechs = new Set<string>();
+  
+  // Check team structure roles for mentioned technologies
+  if (projectData.teamStructure && projectData.teamStructure.roles) {
+    projectData.teamStructure.roles.forEach((role: any) => {
+      if (role.skills && Array.isArray(role.skills)) {
+        role.skills.forEach((skill: string) => {
+          // Only add if it looks like a technology (not a soft skill)
+          if (isTechnologySkill(skill)) {
+            mentionedTechs.add(skill);
+          }
+        });
+      }
+    });
+  }
+  
+  // If no technologies are found, provide defaults based on category
+  if (mentionedTechs.size === 0) {
+    switch (category) {
+      case 'web':
+        return ['React', 'Node.js', 'Express', 'MongoDB'];
+      case 'mobile':
+        return ['React Native', 'JavaScript', 'Firebase'];
+      case 'ai':
+        return ['Python', 'TensorFlow', 'Scikit-learn'];
+      case 'game':
+        return ['Unity', 'C#'];
+      case 'data':
+        return ['Python', 'Pandas', 'Matplotlib'];
+      default:
+        return ['JavaScript', 'HTML', 'CSS'];
+    }
+  }
+  
+  return Array.from(mentionedTechs);
+}
+
+/**
+ * Check if a skill is likely a technology rather than a soft skill
+ */
+function isTechnologySkill(skill: string): boolean {
+  // Common soft skills to exclude
+  const softSkills = [
+    'communication', 'teamwork', 'leadership', 'problem solving', 
+    'time management', 'creativity', 'critical thinking', 'organization',
+    'collaboration', 'adaptability', 'project management', 'attention to detail'
+  ];
+  
+  const lowerSkill = skill.toLowerCase();
+  
+  // Check if it's a soft skill
+  if (softSkills.some(softSkill => lowerSkill.includes(softSkill))) {
+    return false;
+  }
+  
+  // Common technology indicators
+  const techIndicators = [
+    '.js', 'sql', 'html', 'css', 'java', 'python', 'react', 'angular', 'vue', 
+    'node', 'express', 'django', 'flask', 'spring', 'boot', 'ruby', 'rails',
+    'php', 'laravel', 'go', 'rust', 'c#', 'c++', 'typescript', 'mongo', 'postgres',
+    'mysql', 'redis', 'firebase', 'aws', 'azure', 'google cloud', 'docker', 
+    'kubernetes', 'git', 'ci/cd', 'webpack', 'vite', 'unity', 'unreal', 'threejs'
+  ];
+  
+  // Check if it contains tech indicators
+  return techIndicators.some(indicator => lowerSkill.includes(indicator));
 }
 
 
+/**
+ * Determine if a user-submitted project needs AI enhancement
+ */
+function shouldEnhanceProject(projectData: any): boolean {
+  // Check if description is too short
+  const hasShortDescription = !projectData.description || projectData.description.length < 100;
+  
+  // Check if features are missing or too few
+  const hasFewFeatures = !projectData.features || 
+                        !projectData.features.core || projectData.features.core.length < 3 ||
+                        !projectData.features.additional || projectData.features.additional.length < 2;
+  
+  // Check if learning outcomes are missing or too few
+  const hasFewOutcomes = !projectData.learningOutcomes || projectData.learningOutcomes.length < 3;
+  
+  // Check if roles have missing details
+  const hasIncompleteRoles = !projectData.teamStructure || !projectData.teamStructure.roles || 
+                           projectData.teamStructure.roles.some((role: any) => 
+                             !role.title || 
+                             !role.skills || role.skills.length === 0 ||
+                             !role.responsibilities || role.responsibilities.length === 0);
+  
+  return hasShortDescription || hasFewFeatures || hasFewOutcomes || hasIncompleteRoles;
+}
 
-
-// export const generateProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
-//   try {
-//     console.log('\n🚀 Starting project generation...');
-//     const { technologies, complexity, duration, teamSize, category } = req.body;
-//     const user = req.user; // User is already authenticated and loaded by middleware
-
-//     console.log('👤 Checking project limits for user:', user._id);
-//     if (user.projectIdeasLeft <= 0) {
-//       console.log('❌ No project ideas left');
-//       return next(new ErrorHandler("No project ideas left. Please upgrade to Pro plan.", 403));
-//     }
-
-//     // Generate project with OpenAI
-//     console.log('\n🤖 Generating OpenAI prompt...');
-//     const prompt = getPromptFromPreferences({
-//       technologies,
-//       complexity,
-//       duration,
-//       teamSize,
-//       category
-//     });
-//     console.log('Prompt:', prompt);
-
-//     console.log('\n📡 Sending request to OpenAI...');
-//     const completion = await openai.chat.completions.create({
-//       model: "gpt-4",
-//       messages: [{
-//         role: "user",
-//         content: prompt
-//       }],
-//       temperature: 0.7,
-//       max_tokens: 2000,
-//       response_format: { type: "json_object" }
-//     });
-
-//     console.log('\n✨ OpenAI Response received');
-//     const projectData = JSON.parse(completion.choices[0].message.content || "{}");
-
-//     // Ensure the teamStructure roles have the 'filled' property
-//     if (projectData.teamStructure && projectData.teamStructure.roles) {
-//       projectData.teamStructure.roles = projectData.teamStructure.roles.map((role: any) => ({
-//         ...role,
-//         filled: false // Default to not filled
-//       }));
-//     }
-
-//     // Format according to our schema
-//     const fixedComplexity = {
-//       level: complexity.level.toLowerCase(),
-//       percentage: complexity.percentage
-//     };
-
-//     const formattedTeamSize = {
-//       type: teamSize,
-//       count: teamSize === 'solo' ? '1' : teamSize === 'small' ? '2-3' : '4-6'
-//     };
-
-//     const formattedDuration = {
-//       type: duration,
-//       estimate: duration === 'small' ? '1-2 weeks' : duration === 'medium' ? '1-2 months' : '3+ months'
-//     };
-
-//     // Create project in database
-//     console.log('\n💾 Saving to database...');
-//     const project = await GeneratedProject.create({
-//       title: projectData.title,
-//       subtitle: projectData.subtitle,
-//       description: projectData.description,
-//       userId: user._id,
-//       technologies,
-//       complexity: fixedComplexity,
-//       teamSize: formattedTeamSize,
-//       duration: formattedDuration,
-//       category,
-//       features: projectData.features,
-//       teamStructure: projectData.teamStructure,
-//       learningOutcomes: projectData.learningOutcomes
-//     });
-
-//     // Update user's stats
-//     await User.findByIdAndUpdate(user._id, {
-//       $inc: { 
-//         projectIdeasLeft: -1,
-//         projectsGenerated: 1  // Increment projectsGenerated
-//       }
-//     });
-
-//     // Update Redis cache with new user data
-//     const updatedUser = await User.findById(user._id);
-//     if (updatedUser) {
-//       await redis.set(user.githubId, JSON.stringify(updatedUser));
-//     }
+/**
+ * Enhance a user-submitted project with AI-generated content
+ */
+async function enhanceProjectWithAI(projectData: any): Promise<any> {
+  try {
+    // Build a prompt describing what needs to be enhanced
+    const enhancementPrompt = `Please enhance the following project submission while preserving its core concept and user intent. Fill in missing details and expand as needed:
     
-//     console.log('\n✅ Project generation complete!');
-//     res.status(201).json({
-//       success: true,
-//       project,
-//     });
-//   } catch (error: any) {
-//     console.log('\n❌ Error in project generation:', error);
-//     return next(new ErrorHandler(error.message, 500));
-//   }
-// });
-// In your generate.controller.ts
+Project Title: ${projectData.title || "Not provided"}
+Project Subtitle: ${projectData.subtitle || "Not provided"}
+Project Description: ${projectData.description || "Not provided"}
+Technologies: ${projectData.technologies?.join(', ') || "Not specified"}
+Project Category: ${projectData.category || "Not specified"}
+
+Core Features: ${projectData.features?.core?.join(', ') || "Not provided"}
+Additional Features: ${projectData.features?.additional?.join(', ') || "Not provided"}
+
+Team Structure:
+${projectData.teamStructure?.roles?.map((role: any) => 
+  `- ${role.title || "Unnamed role"} (Skills: ${role.skills?.join(', ') || "None specified"}, Responsibilities: ${role.responsibilities?.join(', ') || "None specified"})`
+).join('\n') || "Not provided"}
+
+Learning Outcomes: ${projectData.learningOutcomes?.join(', ') || "Not provided"}
+
+Enhance this project by:
+1. Expanding the description to be detailed and compelling
+2. Ensuring at least 5 core features and 5 additional features that make sense for the project
+3. Ensuring each role has a clear title, at least 3 relevant skills, and 3 specific responsibilities
+4. Providing at least 5 meaningful learning outcomes
+5. Maintaining the original concept, technologies, and intent
+
+Return the enhanced project in this exact JSON format:
+{
+  "title": "Project Title",
+  "subtitle": "Brief project summary",
+  "description": "Detailed project description...",
+  "features": {
+    "core": ["Feature 1", "Feature 2", "Feature 3", "Feature 4", "Feature 5"],
+    "additional": ["Feature 1", "Feature 2", "Feature 3", "Feature 4", "Feature 5"]
+  },
+  "teamStructure": {
+    "roles": [
+      {
+        "title": "Role Title",
+        "skills": ["Skill 1", "Skill 2", "Skill 3"],
+        "responsibilities": ["Responsibility 1", "Responsibility 2", "Responsibility 3"]
+      }
+    ]
+  },
+  "learningOutcomes": ["Learning Outcome 1", "Learning Outcome 2", "Learning Outcome 3", "Learning Outcome 4", "Learning Outcome 5"]
+}`;
+
+    console.log('\n📡 Sending enhancement request to OpenAI...');
+    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo",
+      messages: [{
+        role: "system",
+        content: "You are an expert software architect and creative project planner. Your role is to enhance user-submitted project details while maintaining the original concept and intent."
+      }, {
+        role: "user",
+        content: enhancementPrompt
+      }],
+      temperature: 0.5, // Lower temperature for more consistent enhancements
+      max_tokens: 2500,
+      response_format: { type: "json_object" }
+    });
+
+    console.log('\n✨ Enhancement response received');
+    
+    try {
+      const enhancedData = JSON.parse(completion.choices[0].message.content || "{}");
+      
+      // Merge the enhanced data with the original, prioritizing original values where they exist
+      const mergedData = {
+        title: projectData.title || enhancedData.title,
+        subtitle: projectData.subtitle || enhancedData.subtitle,
+        description: enhancedData.description || projectData.description, // Prefer enhanced description
+        technologies: projectData.technologies || [], // Keep original technologies
+        complexity: projectData.complexity,
+        teamSize: projectData.teamSize,
+        duration: projectData.duration,
+        category: projectData.category,
+        features: {
+          core: enhancedData.features?.core || projectData.features?.core || [],
+          additional: enhancedData.features?.additional || projectData.features?.additional || []
+        },
+        teamStructure: {
+          roles: mergeRoles(projectData.teamStructure?.roles || [], enhancedData.teamStructure?.roles || [])
+        },
+        learningOutcomes: enhancedData.learningOutcomes || projectData.learningOutcomes || []
+      };
+      
+      return mergedData;
+    } catch (parseError) {
+      console.error('Error parsing enhancement response:', parseError);
+      // If enhancement fails, return the original data
+      return projectData;
+    }
+  } catch (error) {
+    console.error('Error enhancing project with AI:', error);
+    // If any error occurs, return the original data
+    return projectData;
+  }
+}
+
+/**
+ * Merge original and enhanced roles, keeping original data where present
+ */
+function mergeRoles(originalRoles: any[], enhancedRoles: any[]): any[] {
+  // If original has no roles, use enhanced roles
+  if (!originalRoles || originalRoles.length === 0) {
+    return enhancedRoles;
+  }
+  
+  // If enhanced has no roles, use original roles
+  if (!enhancedRoles || enhancedRoles.length === 0) {
+    return originalRoles;
+  }
+  
+  // Start with all original roles
+  const mergedRoles = [...originalRoles];
+  
+  // For each original role, enhance it if possible
+  for (let i = 0; i < mergedRoles.length; i++) {
+    const originalRole = mergedRoles[i];
+    
+    // Find a matching enhanced role by title (or the first one if no match)
+    const matchingEnhancedRole = enhancedRoles.find(role => 
+      role.title.toLowerCase() === originalRole.title.toLowerCase()
+    ) || enhancedRoles[0];
+    
+    // Merge in enhanced data where original is missing
+    if (matchingEnhancedRole) {
+      mergedRoles[i] = {
+        title: originalRole.title || matchingEnhancedRole.title,
+        skills: originalRole.skills?.length > 0 ? originalRole.skills : matchingEnhancedRole.skills,
+        responsibilities: originalRole.responsibilities?.length > 0 ? originalRole.responsibilities : matchingEnhancedRole.responsibilities
+      };
+    }
+  }
+  
+  // If original has fewer roles than enhanced, add the additional enhanced roles
+  if (originalRoles.length < enhancedRoles.length) {
+    // Get titles of original roles
+    const originalTitles = originalRoles.map(role => role.title.toLowerCase());
+    
+    // Add enhanced roles that don't have a title match in original roles
+    enhancedRoles.forEach(enhancedRole => {
+      if (!originalTitles.includes(enhancedRole.title.toLowerCase())) {
+        mergedRoles.push(enhancedRole);
+      }
+    });
+  }
+  
+  return mergedRoles;
+}
+
 export const generateProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log('\n🚀 Starting project generation...');
-    const { technologies, complexity, duration, teamSize, category } = req.body;
+    console.log('\n🚀 Starting project generation with AI...');
+    const { technologies, complexity, duration, teamSize, category, projectTheme } = req.body;
     const user = req.user;
 
     console.log('👤 Checking project limits for user:', user._id);
-    if (user.projectIdeasLeft <= 0) {
+    if (user.projectIdeasLeft <= 0 && user.plan !== "pro") {
       console.log('❌ No project ideas left');
       return next(new ErrorHandler("No project ideas left. Please upgrade to Pro plan.", 403));
     }
 
-    // Instead of calling OpenAI, return a mock response
-    const mockProjectData = {
-      title: "Task Management System",
-      subtitle: "A collaborative task tracking application",
-      description: "Build a modern task management system that helps teams organize and track their projects efficiently. Features real-time updates and intuitive UI.",
-      teamSize: {
-        type: teamSize, // This was getting overwritten
-        count: teamSize === 'solo' ? '1' : teamSize === 'small' ? '2-3' : '4-6'
-      },
-      duration: {
-        type: duration, // This was getting overwritten
-        estimate: duration === 'small' ? '1-2 weeks' : duration === 'medium' ? '1-2 months' : '3+ months'
-      },
-      features: {
-        core: [
-          "User authentication and authorization",
-          "Task creation and assignment",
-          "Project organization and categorization",
-          "Real-time updates",
-          "Due date tracking"
-        ],
-        additional: [
-          "File attachments",
-          "Task commenting system",
-          "Progress tracking",
-          "Priority levels",
-          "Search and filtering"
-        ]
-      },
-      teamStructure: {
-        roles: [
-          {
-            title: "Frontend Developer",
-            skills: technologies.filter(tech => ["react", "nextjs", "typescript"].includes(tech)),
-            responsibilities: ["Build responsive UI components", "Implement state management", "Create intuitive user interfaces"]
-          },
-          {
-            title: "Backend Developer",
-            skills: technologies.filter(tech => ["nodejs", "express", "mongodb"].includes(tech)),
-            responsibilities: ["Design API architecture", "Implement database schema", "Handle authentication"]
-          }
-        ]
-      },
-      learningOutcomes: [
-        "State management in complex applications",
-        "Real-time data synchronization",
-        "REST API design principles",
-        "Database schema design",
-        "Authentication and authorization implementation"
-      ]
-    };
+    // Validate technology and category combinations
+    const validationResult = validateTechnologyCategoryPair(technologies, category);
+    if (!validationResult.valid) {
+      return next(new ErrorHandler(validationResult.message, 400));
+    }
 
+    // Generate project with OpenAI
+    console.log('\n🤖 Generating OpenAI prompt...');
+    const prompt = getOptimizedPrompt({
+      technologies,
+      complexity,
+      duration,
+      teamSize,
+      category,
+      projectTheme
+    });
+    
+    console.log('📝 Prompt created for OpenAI');
+
+    console.log('\n📡 Sending request to OpenAI...');
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo", // Using the latest model for best results
+      messages: [{
+        role: "system",
+        content: "You are an expert software architect and creative project planner. Your role is to generate detailed, innovative, and practical software project ideas based on user requirements."
+      }, {
+        role: "user",
+        content: prompt
+      }],
+      temperature: 0.7,
+      max_tokens: 2500,
+      response_format: { type: "json_object" }
+    });
+
+    console.log('\n✨ OpenAI Response received');
+    let projectData;
+    
+    try {
+      projectData = JSON.parse(completion.choices[0].message.content || "{}");
+      
+      // Validate that the response has all required fields
+      const requiredFields = ["title", "subtitle", "description", "features", "teamStructure", "learningOutcomes"];
+      for (const field of requiredFields) {
+        if (!projectData[field]) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+      
+      // Validate nested structures
+      if (!projectData.features.core || !projectData.features.additional) {
+        throw new Error("Invalid features structure");
+      }
+      
+      if (!projectData.teamStructure.roles || !Array.isArray(projectData.teamStructure.roles)) {
+        throw new Error("Invalid team structure");
+      }
+    } catch (parseError) {
+      console.error('Error parsing or validating OpenAI response:', parseError);
+      return next(new ErrorHandler("Failed to generate a valid project. Please try again.", 500));
+    }
+
+    // Ensure the teamStructure roles have the 'filled' property
+    if (projectData.teamStructure && projectData.teamStructure.roles) {
+      projectData.teamStructure.roles = projectData.teamStructure.roles.map((role: any) => ({
+        ...role,
+        filled: false // Default to not filled
+      }));
+    }
+
+    // Format according to our schema
     const fixedComplexity = {
-      level: complexity.level.toLowerCase(), // Convert to lowercase
+      level: complexity.level.toLowerCase(),
       percentage: complexity.percentage
     };
 
-    // Log the data before saving
-    console.log('\n📝 Project data to be saved:', {
-      ...mockProjectData,
-      userId: user._id,
-      complexity:fixedComplexity,
-      category,
-      technologies
-    });
+    const formattedTeamSize = {
+      type: teamSize,
+      count: teamSize === 'solo' ? '1' : teamSize === 'small' ? '2-3' : '4-6'
+    };
 
-    // Create project in database without spreading the request body fields
+    const formattedDuration = {
+      type: duration,
+      estimate: duration === 'small' ? '1-2 weeks' : duration === 'medium' ? '1-2 months' : '3+ months'
+    };
+
+    // Ensure technologies are included in the project
+    const projectTechnologies = technologies.length > 0 ? technologies : 
+      extractTechnologiesFromResponse(projectData, category);
+
+    // Create project in database
     console.log('\n💾 Saving to database...');
     const project = await GeneratedProject.create({
-      title: mockProjectData.title,
-      subtitle: mockProjectData.subtitle,
-      description: mockProjectData.description,
+      title: projectData.title,
+      subtitle: projectData.subtitle,
+      description: projectData.description,
       userId: user._id,
-      technologies,
-      complexity:fixedComplexity,
-      teamSize: mockProjectData.teamSize, // Keep the nested object intact
-      duration: mockProjectData.duration, // Keep the nested object intact
+      technologies: projectTechnologies,
+      complexity: fixedComplexity,
+      teamSize: formattedTeamSize,
+      duration: formattedDuration,
       category,
-      features: mockProjectData.features,
-      teamStructure: mockProjectData.teamStructure,
-      learningOutcomes: mockProjectData.learningOutcomes
+      features: projectData.features,
+      teamStructure: projectData.teamStructure,
+      learningOutcomes: projectData.learningOutcomes
     });
 
+    // Create activity for project generation
     await createProjectGeneratedActivity(
-      req.user._id.toString(),
+      user._id.toString(),
       project._id.toString(),
       project.title
     );
 
-  // Update user's stats
-    await User.findByIdAndUpdate(user._id, {
-      $inc: { 
-        projectIdeasLeft: -1,
-        projectsGenerated: 1  // Increment projectsGenerated
-      }
-    });
+    // Update user's stats - only decrement for free users
+    if (user.plan !== "pro") {
+      await User.findByIdAndUpdate(user._id, {
+        $inc: { 
+          projectIdeasLeft: -1,
+          projectsGenerated: 1
+        }
+      });
+    } else {
+      // For pro users, just increment the generated count
+      await User.findByIdAndUpdate(user._id, {
+        $inc: { projectsGenerated: 1 }
+      });
+    }
 
     // Update Redis cache with new user data
     const updatedUser = await User.findById(user._id);
-    await redis.set(user.githubId, JSON.stringify(updatedUser));
-
+    if (updatedUser) {
+      await redis.set(user.githubId, JSON.stringify(updatedUser));
+    }
+    
     console.log('\n✅ Project generation complete!');
     res.status(201).json({
       success: true,
@@ -319,93 +639,112 @@ export const generateAnother = CatchAsyncError(async (req: Request, res: Respons
       return next(new ErrorHandler("User not found", 404));
     }
 
-    if (user.projectIdeasLeft <= 0) {
+    if (user.projectIdeasLeft <= 0 && user.plan !== "pro") {
       return next(new ErrorHandler("No project ideas left. Please upgrade to Pro plan.", 403));
     }
 
-    // Generate new project with same preferences
-    const mockProjectData = {
-      title: "Task Management System",
-      subtitle: "A collaborative task tracking application",
-      description: "Build a modern task management system that helps teams organize and track their projects efficiently. Features real-time updates and intuitive UI.",
-      teamSize: {
-        type: originalProject.teamSize.type,
-        count: originalProject.teamSize.type === 'solo' ? '1' : 
-               originalProject.teamSize.type === 'small' ? '2-3' : '4-6'
-      },
-      duration: {
-        type: originalProject.duration.type,
-        estimate: originalProject.duration.type === 'small' ? '1-2 weeks' : 
-                 originalProject.duration.type === 'medium' ? '1-2 months' : '3+ months'
-      },
-      features: {
-        core: [
-          "User authentication and authorization",
-          "Task creation and assignment",
-          "Project organization and categorization",
-          "Real-time updates",
-          "Due date tracking"
-        ],
-        additional: [
-          "File attachments",
-          "Task commenting system",
-          "Progress tracking",
-          "Priority levels",
-          "Search and filtering"
-        ]
-      },
-      teamStructure: {
-        roles: [
-          {
-            title: "Frontend Developer",
-            skills: originalProject.technologies.filter(tech => 
-              ["react", "nextjs", "typescript"].includes(tech.toLowerCase())
-            ),
-            responsibilities: ["Build responsive UI components", "Implement state management", "Create intuitive user interfaces"],
-            filled: false
-          },
-          {
-            title: "Backend Developer",
-            skills: originalProject.technologies.filter(tech => 
-              ["nodejs", "express", "mongodb"].includes(tech.toLowerCase())
-            ),
-            responsibilities: ["Design API architecture", "Implement database schema", "Handle authentication"],
-            filled:false
-          }
-        ]
-      },
-      learningOutcomes: [
-        "State management in complex applications",
-        "Real-time data synchronization",
-        "REST API design principles",
-        "Database schema design",
-        "Authentication and authorization implementation"
-      ]
+    // Create preferences object from original project
+    const preferences = {
+      technologies: originalProject.technologies,
+      complexity: originalProject.complexity,
+      duration: originalProject.duration.type,
+      teamSize: originalProject.teamSize.type,
+      category: originalProject.category,
+      // Add a note requesting a different project
+      projectTheme: "Please generate a different project than before, with a fresh concept and approach."
     };
+
+    // Generate new project with OpenAI
+    console.log('\n🤖 Generating OpenAI prompt for new project variation...');
+    const prompt = getOptimizedPrompt(preferences);
+    
+    console.log('\n📡 Sending request to OpenAI...');
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo",
+      messages: [{
+        role: "system",
+        content: "You are an expert software architect and creative project planner. Your role is to generate detailed, innovative, and practical software project ideas based on user requirements. Create a different project than what might have been generated before."
+      }, {
+        role: "user",
+        content: prompt
+      }],
+      temperature: 0.8, // Slightly higher temperature for more variation
+      max_tokens: 2500,
+      response_format: { type: "json_object" }
+    });
+
+    console.log('\n✨ OpenAI Response received');
+    let projectData;
+    
+    try {
+      projectData = JSON.parse(completion.choices[0].message.content || "{}");
+      
+      // Validate that the response has all required fields
+      const requiredFields = ["title", "subtitle", "description", "features", "teamStructure", "learningOutcomes"];
+      for (const field of requiredFields) {
+        if (!projectData[field]) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+      
+      // Validate nested structures
+      if (!projectData.features.core || !projectData.features.additional) {
+        throw new Error("Invalid features structure");
+      }
+      
+      if (!projectData.teamStructure.roles || !Array.isArray(projectData.teamStructure.roles)) {
+        throw new Error("Invalid team structure");
+      }
+    } catch (parseError) {
+      console.error('Error parsing or validating OpenAI response:', parseError);
+      return next(new ErrorHandler("Failed to generate a valid project. Please try again.", 500));
+    }
+
+    // Ensure the teamStructure roles have the 'filled' property
+    if (projectData.teamStructure && projectData.teamStructure.roles) {
+      projectData.teamStructure.roles = projectData.teamStructure.roles.map((role: any) => ({
+        ...role,
+        filled: false // Default to not filled
+      }));
+    }
 
     // Create new project
     const newProject = await GeneratedProject.create({
-      title: mockProjectData.title,
-      subtitle: mockProjectData.subtitle,
-      description: mockProjectData.description,
+      title: projectData.title,
+      subtitle: projectData.subtitle,
+      description: projectData.description,
       userId,
       technologies: originalProject.technologies,
       complexity: originalProject.complexity,
-      teamSize: mockProjectData.teamSize,
-      duration: mockProjectData.duration,
+      teamSize: originalProject.teamSize,
+      duration: originalProject.duration,
       category: originalProject.category,
-      features: mockProjectData.features,
-      teamStructure: mockProjectData.teamStructure,
-      learningOutcomes: mockProjectData.learningOutcomes
+      features: projectData.features,
+      teamStructure: projectData.teamStructure,
+      learningOutcomes: projectData.learningOutcomes
     });
 
-    // Update user's remaining project ideas
-    await User.findByIdAndUpdate(userId, {
-      $inc: { 
-        projectIdeasLeft: -1,
-        projectsGenerated: 1
-      }
-    });
+    // Create activity for project generation
+    await createProjectGeneratedActivity(
+      userId.toString(),
+      newProject._id.toString(),
+      newProject.title
+    );
+
+    // Update user's stats - only decrement for free users
+    if (user.plan !== "pro") {
+      await User.findByIdAndUpdate(userId, {
+        $inc: { 
+          projectIdeasLeft: -1,
+          projectsGenerated: 1
+        }
+      });
+    } else {
+      // For pro users, just increment the generated count
+      await User.findByIdAndUpdate(userId, {
+        $inc: { projectsGenerated: 1 }
+      });
+    }
 
     // Update Redis cache with new user data
     const updatedUser = await User.findById(userId);
@@ -418,6 +757,7 @@ export const generateAnother = CatchAsyncError(async (req: Request, res: Respons
       project: newProject,
     });
   } catch (error: any) {
+    console.error('Error generating another project:', error);
     return next(new ErrorHandler(error.message, 500));
   }
 });
@@ -551,34 +891,43 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
 
 export const submitUserProject = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log('\n🚀 Starting user project submission...');
+    console.log('\n🚀 Starting user project submission with AI enhancement...');
     const projectData = req.body;
     const user = req.user;
 
+    // Check if the project needs AI enhancement
+    const needsEnhancement = shouldEnhanceProject(projectData);
+    let enhancedData = { ...projectData };
+
+    if (needsEnhancement) {
+      console.log('📝 Project needs enhancement, calling AI...');
+      enhancedData = await enhanceProjectWithAI(projectData);
+    }
+
     // Determine complexity level based on percentage
-    const complexityLevel = projectData.complexity <= 33 ? 'beginner' : 
-                           projectData.complexity <= 66 ? 'intermediate' : 'advanced';
+    const complexityLevel = enhancedData.complexity <= 33 ? 'beginner' : 
+                           enhancedData.complexity <= 66 ? 'intermediate' : 'advanced';
     
     // Format the teamSize
-    const teamSizeType = projectData.teamSize;
-    const teamSizeCount = projectData.teamSize === 'solo' ? '1' : 
-                         projectData.teamSize === 'small' ? '2-3' : '4-6';
+    const teamSizeType = enhancedData.teamSize;
+    const teamSizeCount = enhancedData.teamSize === 'solo' ? '1' : 
+                         enhancedData.teamSize === 'small' ? '2-3' : '4-6';
     
     // Format the duration
-    const durationType = projectData.duration;
-    const durationEstimate = projectData.duration === 'small' ? '1-2 weeks' : 
-                            projectData.duration === 'medium' ? '1-2 months' : '3+ months';
+    const durationType = enhancedData.duration;
+    const durationEstimate = enhancedData.duration === 'small' ? '1-2 weeks' : 
+                            enhancedData.duration === 'medium' ? '1-2 months' : '3+ months';
 
     // Format the data to match our schema structure
     const formattedData = {
-      title: projectData.title,
-      subtitle: projectData.subtitle,
-      description: projectData.description,
+      title: enhancedData.title,
+      subtitle: enhancedData.subtitle || "", // Ensure subtitle has a default value
+      description: enhancedData.description,
       userId: user._id,
-      technologies: projectData.technologies,
+      technologies: enhancedData.technologies || [],
       complexity: {
         level: complexityLevel,
-        percentage: Number(projectData.complexity) // Ensure this is a number
+        percentage: Number(enhancedData.complexity) // Ensure this is a number
       },
       teamSize: {
         type: teamSizeType,
@@ -588,20 +937,20 @@ export const submitUserProject = CatchAsyncError(async (req: Request, res: Respo
         type: durationType,
         estimate: durationEstimate
       },
-      category: projectData.category || 'web', // Default to web if not specified
+      category: enhancedData.category || 'web', // Default to web if not specified
       features: {
-        core: projectData.features.core.filter((feature: string) => feature.trim()),
-        additional: projectData.features.additional.filter((feature: string) => feature.trim())
+        core: enhancedData.features?.core?.filter((feature: string) => feature.trim()) || [],
+        additional: enhancedData.features?.additional?.filter((feature: string) => feature.trim()) || []
       },
       teamStructure: {
-        roles: projectData.teamStructure.roles.map((role: any) => ({
-          title: role.title,
-          skills: role.skills,
-          responsibilities: role.responsibilities.filter((r: string) => r.trim()),
+        roles: enhancedData.teamStructure?.roles?.map((role: any) => ({
+          title: role.title || "",
+          skills: role.skills || [],
+          responsibilities: role.responsibilities?.filter((r: string) => r.trim()) || [],
           filled: false // Default to not filled
-        }))
+        })) || []
       },
-      learningOutcomes: projectData.learningOutcomes.filter((outcome: string) => outcome.trim()),
+      learningOutcomes: enhancedData.learningOutcomes?.filter((outcome: string) => outcome.trim()) || [],
       isSaved: true, // Auto-save user submitted projects
       isPublished: false // Not published by default
     };
@@ -612,6 +961,13 @@ export const submitUserProject = CatchAsyncError(async (req: Request, res: Respo
     // Create project in database
     console.log('\n💾 Saving to database...');
     const project = await GeneratedProject.create(formattedData);
+
+    // Create activity for project saving
+    await createProjectSavedActivity(
+      user._id.toString(),
+      project._id.toString(),
+      project.title
+    );
 
     // Update user's stats
     await User.findByIdAndUpdate(user._id, {

@@ -13,6 +13,7 @@ import publishedProjectsRouter from "./routes/publishedProjectsRoutes";
 import feedbackRouter from "./routes/feedbackRoutes";
 import discordRouter from "./routes/discordRoutes";
 import activityRouter from "./routes/activityRoutes";
+import { handleAIError } from "./utils/aiErrorHandler";
 
 app.use(express.json({limit:"50mb"}));
 
@@ -49,4 +50,7 @@ app.all("*", (req: Request, res: Response, next: NextFunction) => {
     next(err);
 });
 
-app.use(ErrorMiddleware)
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  handleAIError(err, req, res, next);
+});
+app.use(ErrorMiddleware);
