@@ -11,6 +11,7 @@ import {
   createProjectSavedActivity,
   createProjectPublishedActivity
 } from '../utils/activityUtils';
+import { canEditProject, checkPublishLimit, incrementPublishedProjects } from '../utils/pricingUtils';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -845,6 +846,12 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
       return next(new ErrorHandler("Project is already published", 400));
     }
 
+        // Check if user has reached their publish limit
+    const canPublish = await checkPublishLimit(userId.toString());
+    if (!canPublish) {
+      return next(new ErrorHandler("You have reached your publish limit. Free users can only publish 1 project. Upgrade to Pro for unlimited publishing.", 403));
+    }
+
     // Set the project as published
     project.isPublished = true;
 
@@ -872,11 +879,21 @@ export const publishProject = CatchAsyncError(async (req: Request, res: Response
     // Save the project
     await project.save();
 
+    //Increment user's published project count if pricing is enabled
+    await incrementPublishedProjects(userId.toString());
+
     await createProjectPublishedActivity(
       req.user._id.toString(),
       projectId,
       project.title
     );
+
+     // Update Redis cache with fresh user data
+     const updatedUser = await User.findById(userId);
+     if (updatedUser) {
+       await redis.set(req.user.githubId, JSON.stringify(updatedUser), 'EX', 3600);
+     }
+ 
 
     res.status(200).json({
       success: true,
@@ -1017,6 +1034,11 @@ export const editProject = CatchAsyncError(async (req: Request, res: Response, n
       return next(new ErrorHandler("Published projects cannot be edited", 403));
     }
 
+     // Check if user can edit projects (only pro users) ===
+     const userCanEdit = await canEditProject(userId.toString());
+     if (!userCanEdit) {
+       return next(new ErrorHandler("Only Pro users can edit saved projects. Please upgrade to Pro to enable project editing.", 403));
+     }
     // Process the updates
     const updatedProject = {
       title: projectData.title || project.title,
@@ -1070,4 +1092,4 @@ export const editProject = CatchAsyncError(async (req: Request, res: Response, n
     console.log('\n❌ Error in project update:', error);
     return next(new ErrorHandler(error.message, 500));
   }
-});
+}); 

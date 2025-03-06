@@ -4,6 +4,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import { verifyFirebaseToken } from './utils/fbauth';
 import User from './models/userModel';
+import { setupCronJobs } from './utils/cronJobs';
 require("dotenv").config();
 
 // Create HTTP server
@@ -77,6 +78,9 @@ io.on('connection', (socket: any) => {
     console.log(`User disconnected: ${socket.userId}`);
   });
 });
+
+// Set up cron jobs for scheduling tasks like monthly limit resets
+setupCronJobs();
 
 // Start the server
 const PORT = process.env.PORT || 5000;

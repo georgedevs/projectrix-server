@@ -9,6 +9,13 @@ import {
   createCollaborationRequestActivity,
   createCollaborationResponseActivity
 } from '../utils/activityUtils';
+import {
+  checkCollaborationRequestLimit,
+  checkActiveCollaborationLimit,
+  decrementCollaborationRequests,
+  isPricingEnabled
+} from '../utils/pricingUtils';
+import { redis } from '../utils/redis';
 
 // Submit a collaboration request
 export const submitCollaborationRequest = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -55,6 +62,18 @@ export const submitCollaborationRequest = CatchAsyncError(async (req: Request, r
       return next(new ErrorHandler("You have already applied for this role", 400));
     }
 
+
+    const hasRequestsLeft = await checkCollaborationRequestLimit(applicantId.toString());
+    if (!hasRequestsLeft) {
+      return next(new ErrorHandler("You have reached your collaboration request limit for this month. Upgrade to Pro for unlimited requests.", 403));
+    }
+
+    // Check if user has reached active collaboration limit
+    const canHaveMoreCollaborations = await checkActiveCollaborationLimit(applicantId.toString());
+    if (!canHaveMoreCollaborations) {
+      return next(new ErrorHandler("You have reached your active collaboration limit (1). Upgrade to Pro for unlimited collaborations.", 403));
+    }
+
     // Create collaboration request
     const collaborationRequest = await CollaborationRequest.create({
       projectId,
@@ -65,6 +84,8 @@ export const submitCollaborationRequest = CatchAsyncError(async (req: Request, r
       status: 'pending',
       appliedAt: new Date()
     });
+
+    await decrementCollaborationRequests(applicantId.toString());
 
     // Populate response with user data
     const populatedRequest = await CollaborationRequest.findById(collaborationRequest._id)
@@ -179,6 +200,35 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
       return next(new ErrorHandler("You don't have permission to update this request", 403));
     }
 
+  const applicant = await User.findById(request.applicantId);
+    if (!applicant) {
+      return next(new ErrorHandler("Applicant not found", 404));
+    }
+
+    if (status === 'accepted' && isPricingEnabled() && applicant.plan === 'free') {
+      const activeCollabs = applicant.projectsCollaborated || 0;
+      
+      if (activeCollabs >= 1) {
+        // Auto-reject since free user already has an active collaboration
+        request.status = 'rejected';
+        await request.save();
+        
+        await createCollaborationResponseActivity(
+          request.applicantId.toString(),
+          request._id.toString(),
+          req.user.name,
+          project.title,
+          request.role,
+          'rejected'
+        );
+        
+        return res.status(403).json({
+          success: false,
+          message: "This user has reached their active collaboration limit (1). They need to upgrade to Pro for more collaborations.",
+          request
+        });
+      }
+    }
     // Update the request status
     request.status = status;
     await request.save();
@@ -219,6 +269,36 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
           { $inc: { projectsCollaborated: 1 } }
         );
 
+        if (isPricingEnabled() && applicant.plan === 'free') {
+          const otherPendingRequests = await CollaborationRequest.find({
+            applicantId: request.applicantId,
+            status: 'pending',
+            _id: { $ne: requestId }
+          }).populate('projectId', 'title');
+          
+          // Reject all other pending requests for this free user
+          if (otherPendingRequests.length > 0) {
+            rejectedRequests = await Promise.all(
+              otherPendingRequests.map(async (req) => {
+                req.status = 'rejected';
+                await req.save();
+                
+                // Create activity for auto-rejection
+                await createCollaborationResponseActivity(
+                  req.applicantId.toString(),
+                  req._id.toString(),
+                  "System",
+                  req.projectId.title || "Project",
+                  req.role,
+                  'rejected'
+                );
+                
+                return req;
+              })
+            );
+          }
+        }
+
         // Find all other pending requests for the same role and reject them
         const otherRequests = await CollaborationRequest.find({
           projectId: request.projectId,
@@ -229,13 +309,16 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
 
         // Reject all other pending requests for this role
         if (otherRequests.length > 0) {
-          rejectedRequests = await Promise.all(
+          const rejectedRoleRequests = await Promise.all(
             otherRequests.map(async (req) => {
               req.status = 'rejected';
               await req.save();
               return req;
             })
           );
+          
+          // Add to rejected requests list
+          rejectedRequests = [...rejectedRequests, ...rejectedRoleRequests];
         }
       }
     }
@@ -249,6 +332,9 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
       request.role,
       status
     );
+
+    const updatedApplicant = await User.findById(request.applicantId);
+    await redis.set(applicant.githubId, JSON.stringify(updatedApplicant), 'EX', 3600);
     
     res.status(200).json({
       success: true,

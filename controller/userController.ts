@@ -5,6 +5,7 @@ import ErrorHandler from '../utils/ErrorHandler';
 import { redis } from '../utils/redis';
 import { verifyFirebaseToken } from '../utils/fbauth';
 import User from '../models/userModel';
+import { initializeUserPlanLimits } from '../utils/pricingUtils';
 
 // Register or login user with GitHub
 export const githubAuth = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -50,16 +51,21 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
           skills: [],
           projectIdeasLeft: 3, // Default number of free projects
           projectsGenerated: 0,
+          publishedProjectsCount: 0, // Initialize published projects count
+          collaborationRequestsLeft: 3, // Initialize collaboration requests
           createdAt: new Date(),
           lastLogin: new Date(),
-          role: 'user'
+          role: 'user',
+          plan: 'free' // Default to free plan
         };
+        
+        // Initialize user plan limits
+        initializeUserPlanLimits(userData);
         
         user = await User.create(userData);
         console.log('New user created:', user._id);
       } else {
         console.log('Existing user found:', user._id);
-
         await user.save();
       }
 
@@ -91,7 +97,7 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
     });
     return next(new ErrorHandler(error.message || 'Authentication failed', error.statusCode || 400));
   }
-}); 
+});
 
 // Logout user
 export const logout = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {

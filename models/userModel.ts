@@ -1,3 +1,4 @@
+// Updated User Model
 import mongoose, { Document, Model, Schema } from "mongoose";
 
 interface IStartedProject {
@@ -23,10 +24,12 @@ export interface IUser extends Document {
   skills: string[];
   projectsGenerated: number;
   projectsCollaborated: number;
+  publishedProjectsCount: number; // New field to track published projects
   isAvailable: boolean;
   createdAt: Date;
   plan: string;
   projectIdeasLeft: number;
+  collaborationRequestsLeft: number; // New field for tracking collaboration requests
   planExpiryDate?: Date;
   startedProjects: IStartedProject[];
   collaborations: ICollaboration[];
@@ -64,8 +67,8 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
   },
   role: {
     type: String,
-    default: "user",  
-    enum: ["user", "admin"]  // Restrict possible values
+    default: "user",
+    enum: ["user", "admin"]
   },
   username: {
     type: String,
@@ -83,6 +86,10 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
     default: 0,
   },
   projectsCollaborated: {
+    type: Number,
+    default: 0,
+  },
+  publishedProjectsCount: {  // Track number of published projects
     type: Number,
     default: 0,
   },
@@ -105,6 +112,10 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
   projectIdeasLeft: {
     type: Number,
     default: 3  // Free plan starts with 3 project ideas
+  },
+  collaborationRequestsLeft: {  // For tracking collaboration request limits
+    type: Number,
+    default: 3  // Free plan starts with 3 collaboration requests per month
   },
   planExpiryDate: {
     type: Date
