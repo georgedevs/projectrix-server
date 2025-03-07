@@ -14,6 +14,9 @@ import feedbackRouter from "./routes/feedbackRoutes";
 import discordRouter from "./routes/discordRoutes";
 import activityRouter from "./routes/activityRoutes";
 import { handleAIError } from "./utils/aiErrorHandler";
+import adminUsersRouter from "./routes/adminUsersRoutes";
+import analyticsRouter from "./routes/analyticsRoutes";
+import paymentRouter from "./routes/paymentRoutes";
 
 app.use(express.json({limit:"50mb"}));
 
@@ -36,6 +39,9 @@ app.use("/api/v1",publishedProjectsRouter);
 app.use("/api/v1",feedbackRouter);
 app.use("/api/v1", discordRouter);
 app.use("/api/v1", activityRouter);
+app.use("/api/v1", analyticsRouter);
+app.use("/api/v1", adminUsersRouter);
+app.use("/api/v1", paymentRouter);
 
 app.get("/test", (req:Request, res:Response, next:NextFunction) => {
     res.status(200).json({
