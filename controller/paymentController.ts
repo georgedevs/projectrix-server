@@ -16,25 +16,29 @@ import Stripe from 'stripe';
 
 // Get pricing information based on user location
 export const getPricing = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    // Get country code from request
-    const { countryCode } = req.query;
-    
-    if (!countryCode) {
-      return next(new ErrorHandler("Country code is required", 400));
+    try {
+      // Get country code from request
+      const { countryCode } = req.query;
+      
+      if (!countryCode) {
+        return next(new ErrorHandler("Country code is required", 400));
+      }
+      
+      console.log(`Getting pricing for country: ${countryCode}`);
+      
+      // Get pricing for location
+      const pricing = getPricingForLocation(countryCode as string);
+      
+      console.log(`Pricing returned: ${JSON.stringify(pricing)}`);
+      
+      res.status(200).json({
+        success: true,
+        pricing
+      });
+    } catch (error: any) {
+      return next(new ErrorHandler(error.message, 500));
     }
-    
-    // Get pricing for location
-    const pricing = getPricingForLocation(countryCode as string);
-    
-    res.status(200).json({
-      success: true,
-      pricing
-    });
-  } catch (error: any) {
-    return next(new ErrorHandler(error.message, 500));
-  }
-});
+  });
 
 // Create a payment session (Stripe or Flutterwave)
 export const createPaymentSession = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
