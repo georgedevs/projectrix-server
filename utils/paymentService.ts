@@ -4,6 +4,7 @@ import ErrorHandler from './ErrorHandler';
 import User from '../models/userModel';
 import Subscription from '../models/subscription.model';
 import dotenv from 'dotenv';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -14,7 +15,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
 
 const flutterwave = new Flutterwave(
   process.env.FLUTTERWAVE_PUBLIC_KEY as string,
-  process.env.FLUTTERWAVE_SECRET_KEY as string
+  process.env.FLUTTERWAVE_SECRET_KEY as string,
+  process.env.FLUTTERWAVE_ENCRYPTION_KEY as string
 );
 
 // Supported currencies and their configuration
@@ -106,11 +108,14 @@ export async function createFlutterwavePayment(
   phoneNumber: string = ''
 ) {
   try {
-    const payload = {
-      tx_ref: `projectrix-${Date.now()}-${userId}`,
-      amount: PAYMENT_CONFIG.NGN.amount / 100, // Convert from kobo to naira
+    // Generate a transaction reference
+    const txRef = `projectrix-${Date.now()}-${userId}`;
+
+    // Create a payment link 
+    const paymentData = {
+      tx_ref: txRef,
+      amount: PAYMENT_CONFIG.NGN.amount / 100, // Convert from kobo to naira (5000)
       currency: 'NGN',
-      payment_options: 'card,ussd,banktransfer',
       redirect_url: `${process.env.FRONTEND_URL}/payment/callback`,
       customer: {
         email,
@@ -127,12 +132,25 @@ export async function createFlutterwavePayment(
       }
     };
 
-    const response = await flutterwave.Charge.card(payload);
-    
-    return {
-      paymentLink: response.meta.authorization.redirect,
-      transactionRef: payload.tx_ref
-    };
+    // Use the standard endpoint to create a payment link
+    const response = await axios.post(
+      'https://api.flutterwave.com/v3/payments',
+      paymentData,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`
+        }
+      }
+    );
+
+    if (response.data && response.data.status === 'success') {
+      return {
+        paymentLink: response.data.data.link,
+        transactionRef: txRef
+      };
+    } else {
+      throw new Error('Failed to create payment link');
+    }
   } catch (error) {
     console.error('Flutterwave payment error:', error);
     throw new ErrorHandler('Failed to create payment link', 500);
