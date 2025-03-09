@@ -135,6 +135,16 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       process.env.STRIPE_WEBHOOK_SECRET as string
     );
     
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.userId;
+      
+      if (userId) {
+        // Update user subscription
+        await updateUserSubscription(userId);
+        console.log(`User ${userId} upgraded to Pro plan via Stripe Checkout`);
+      }
+    }
     // Process the event
     await handleStripeWebhook(event);
     

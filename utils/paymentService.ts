@@ -71,27 +71,26 @@ export async function createStripePaymentSession(
       customerId = customer.id;
     }
 
-    // Create a subscription
-    const subscription = await stripe.subscriptions.create({
+    const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      items: [
+      payment_method_types: ['card'],
+      line_items: [
         {
-          price: process.env.STRIPE_PRICE_ID as string, // Monthly subscription price ID
+          price: process.env.STRIPE_PRICE_ID as string, // Monthly subscription price ID 
+          quantity: 1,
         },
       ],
-      payment_behavior: 'default_incomplete',
-      expand: ['latest_invoice.payment_intent'],
+      mode: 'subscription',
+      success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/pricing?canceled=true`,
       metadata: {
         userId
       }
     });
 
-    // @ts-ignore - Stripe types are sometimes incomplete
-    const clientSecret = subscription.latest_invoice.payment_intent.client_secret;
-
     return {
-      subscriptionId: subscription.id,
-      clientSecret
+      id: session.id,
+      url: session.url
     };
   } catch (error) {
     console.error('Stripe payment session error:', error);
