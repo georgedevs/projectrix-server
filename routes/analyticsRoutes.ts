@@ -12,7 +12,7 @@ import {
 import { isAuthenticated } from '../middleware/auth';
 import { isAdmin } from '../middleware/isAdmin';
 
-const analyticsRouter = express.Router();
+const analyticsRouter = express.Router(); 
 
 // All analytics routes require authentication and admin privileges
 analyticsRouter.use(isAuthenticated, isAdmin);
