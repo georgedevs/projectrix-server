@@ -107,7 +107,8 @@ export const isAuthenticated = async (req: Request, res: Response, next: NextFun
       '/published-projects',
       '/published-projects/technologies',
       '/published-projects/roles',
-      '/discord/callback'  
+      '/discord/callback'  ,
+      '/webhooks/stripe'
     ];
 
     // Get the path without query parameters
@@ -116,6 +117,7 @@ export const isAuthenticated = async (req: Request, res: Response, next: NextFun
     // Check if the current path is a public route 
     const isPublicRoute = publicRoutes.includes(path) || 
                           path.startsWith('/published-projects/') ||
+                          path.startsWith('/webooks/') ||
                           path.startsWith('/discord/callback'); 
     
     if (isPublicRoute) {

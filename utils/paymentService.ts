@@ -5,6 +5,7 @@ import User from '../models/userModel';
 import Subscription from '../models/subscription.model';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import { redis } from './redis';
 
 dotenv.config();
 
@@ -160,24 +161,46 @@ export async function createFlutterwavePayment(
 // Verify Flutterwave payment
 export async function verifyFlutterwavePayment(transactionId: string) {
   try {
-    const response = await flutterwave.Transaction.verify({ id: transactionId });
+    const response = await axios.get(
+      `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`
+        }
+      }
+    );
     
-    if (response.data.status === 'successful') {
-      const { userId } = response.data.meta;
+    if (response.data.status === 'success' && 
+        response.data.data.status === 'successful') {
+      // Extract userId from meta data or transaction reference
+      const txRef = response.data.data.tx_ref;
+      // The format should be projectrix-timestamp-userId
+      const userId = txRef.split('-')[2];
+
+      await addPaymentToHistory(
+        userId,
+        response.data.amount,
+        response.data.currency,
+        response.data.tx_ref,
+        'flutterwave',
+        'successful'
+      );
       
-      // Update user subscription
-      await updateUserSubscription(userId);
-      
-      return {
-        success: true,
-        message: 'Payment verified successfully'
-      };
-    } else {
-      return {
-        success: false,
-        message: 'Payment verification failed'
-      };
+      if (userId) {
+        // Update user subscription
+        await updateUserSubscription(userId, txRef, 'flutterwave');
+        
+        return {
+          success: true,
+          message: 'Payment verified successfully'
+        };
+      }
     }
+    
+    return {
+      success: false,
+      message: 'Payment verification failed'
+    };
   } catch (error) {
     console.error('Flutterwave verification error:', error);
     throw new ErrorHandler('Failed to verify payment', 500);
@@ -195,24 +218,53 @@ export async function handleStripeWebhook(event: Stripe.Event) {
           const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
           const { userId } = subscription.metadata;
           
+          // Add payment to history
+          await addPaymentToHistory(
+            userId,
+            invoice.amount_paid / 100, // Convert from cents to dollars
+            invoice.currency.toUpperCase(),
+            invoice.id,
+            'stripe',
+            'successful'
+          );
+          
           // Update user subscription
           await updateUserSubscription(userId);
         }
         break;
+      
+      case 'invoice.payment_failed':
+        const failedInvoice = event.data.object as Stripe.Invoice;
+        if (failedInvoice.subscription) {
+          // Get the subscription
+          const subscription = await stripe.subscriptions.retrieve(failedInvoice.subscription as string);
+          const { userId } = subscription.metadata;
+          
+          // Add failed payment to history
+          await addPaymentToHistory(
+            userId,
+            failedInvoice.amount_due / 100, // Convert from cents to dollars
+            failedInvoice.currency.toUpperCase(),
+            failedInvoice.id,
+            'stripe',
+            'failed'
+          );
+        }
+        break;
         
       case 'customer.subscription.deleted':
-        const subscription = event.data.object as Stripe.Subscription;
-        const { userId } = subscription.metadata;
+        const deletedSubscription = event.data.object as Stripe.Subscription;
+        const { userId } = deletedSubscription.metadata;
         
         // Downgrade user to free plan
         await User.findByIdAndUpdate(userId, { plan: 'free' });
         
         // Update subscription record
         await Subscription.findOneAndUpdate(
-          { userId, 'provider.stripeSubscriptionId': subscription.id },
+          { userId, 'provider.stripeSubscriptionId': deletedSubscription.id },
           { 
             status: 'cancelled',
-            endDate: new Date(subscription.current_period_end * 1000)
+            endDate: new Date(deletedSubscription.current_period_end * 1000)
           }
         );
         break;
@@ -224,7 +276,6 @@ export async function handleStripeWebhook(event: Stripe.Event) {
     throw new ErrorHandler('Failed to process webhook', 500);
   }
 }
-
 // Update user subscription
 export async function updateUserSubscription(
   userId: string, 
@@ -232,13 +283,30 @@ export async function updateUserSubscription(
   provider: 'stripe' | 'flutterwave' = 'stripe'
 ) {
   try {
+    console.log(`Updating subscription for user: ${userId} via ${provider}`);
+    
     // Update user to pro plan
-    await User.findByIdAndUpdate(userId, {
-      plan: 'pro',
-      planExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-      projectIdeasLeft: 999999, // Effectively unlimited
-      collaborationRequestsLeft: 999999 // Effectively unlimited
-    });
+    const updatedUser = await User.findByIdAndUpdate(
+      userId, 
+      {
+        plan: 'pro',
+        planExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        projectIdeasLeft: 999999, // Effectively unlimited
+        collaborationRequestsLeft: 999999 // Effectively unlimited
+      },
+      { new: true }
+    );
+    
+    if (!updatedUser) {
+      console.error(`User not found: ${userId}`);
+      throw new Error(`User not found: ${userId}`);
+    }
+    
+    console.log(`User plan updated to: ${updatedUser.plan}`);
+    
+    // Update Redis cache with fresh user data
+    await redis.set(updatedUser.githubId, JSON.stringify(updatedUser), 'EX', 3600);
+    console.log('User data cached in Redis');
     
     // Create or update subscription record
     const subscriptionData: any = {
@@ -247,28 +315,27 @@ export async function updateUserSubscription(
       plan: 'pro',
       startDate: new Date(),
       endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      provider: {}
+      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      provider: {
+        name: provider
+      }
     };
     
     // Add provider-specific data
     if (provider === 'stripe') {
-      subscriptionData.provider.name = 'stripe';
-      if (providerId) {
-        subscriptionData.provider.stripeSubscriptionId = providerId;
-      }
+      subscriptionData.provider.stripeSubscriptionId = providerId;
     } else {
-      subscriptionData.provider.name = 'flutterwave';
-      if (providerId) {
-        subscriptionData.provider.flutterwaveTransactionRef = providerId;
-      }
+      subscriptionData.provider.flutterwaveTransactionRef = providerId;
     }
     
     // Create or update subscription
-    await Subscription.findOneAndUpdate(
+    const subscription = await Subscription.findOneAndUpdate(
       { userId },
       subscriptionData,
       { upsert: true, new: true }
     );
+    
+    console.log(`Subscription updated: ${subscription._id}`);
     
     return true;
   } catch (error) {
@@ -277,6 +344,63 @@ export async function updateUserSubscription(
   }
 }
 
+export async function addPaymentToHistory(
+  userId: string, 
+  amount: number,
+  currency: string,
+  reference: string,
+  provider: 'stripe' | 'flutterwave',
+  status: 'successful' | 'failed' | 'pending' = 'successful'
+) {
+  try {
+    // Find subscription or create if it doesn't exist
+    let subscription = await Subscription.findOne({ userId });
+    
+    if (!subscription) {
+      // Calculate end date (30 days from now)
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30);
+      
+      // Create subscription with default values
+      subscription = await Subscription.create({
+        userId,
+        status: 'pending',
+        plan: 'free',
+        startDate: new Date(),
+        endDate,
+        provider: {
+          name: provider
+        },
+        paymentHistory: []
+      });
+    }
+    
+    // Add payment to history
+    const payment = {
+      amount,
+      currency,
+      date: new Date(),
+      reference,
+      provider,
+      status
+    };
+    
+    // Add to payment history
+    if (!subscription.paymentHistory) {
+      subscription.paymentHistory = [];
+    }
+    
+    subscription.paymentHistory.push(payment);
+    
+    // Save subscription
+    await subscription.save();
+    
+    return true;
+  } catch (error) {
+    console.error('Error adding payment to history:', error);
+    return false;
+  }
+}
 // Get pricing for current user location
 export function getPricingForLocation(countryCode: string) {
   const currency = detectCurrencyFromCountryCode(countryCode);

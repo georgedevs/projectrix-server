@@ -18,9 +18,18 @@ import adminUsersRouter from "./routes/adminUsersRoutes";
 import analyticsRouter from "./routes/analyticsRoutes";
 import paymentRouter from "./routes/paymentRoutes";
 
+app.post("/api/v1/webhooks/stripe", 
+    express.raw({ type: 'application/json' }), 
+    (req, res) => {
+      const { stripeWebhook } = require('./controller/paymentController');
+      stripeWebhook(req, res);
+    }
+  );
+
 app.use(express.json({limit:"50mb"}));
 
 app.use(cookieParser());
+
 
 app.use(cors({
     origin: process.env.ORIGIN,
@@ -28,6 +37,7 @@ app.use(cors({
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 
 app.use(requestLogger);
 

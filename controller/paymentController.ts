@@ -120,7 +120,13 @@ export const verifyPayment = CatchAsyncError(async (req: Request, res: Response,
 export const stripeWebhook = async (req: Request, res: Response) => {
   const signature = req.headers['stripe-signature'] as string;
   
+  console.log('Received Stripe webhook', {
+    signatureExists: !!signature,
+    bodyLength: req.body?.length || 0
+  });
+  
   if (!signature) {
+    console.error('Stripe webhook missing signature');
     return res.status(400).json({ success: false, message: 'Stripe signature missing' });
   }
   
@@ -129,25 +135,43 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       apiVersion: '2025-02-24.acacia',
     });
     
+    // Ensure the webhook secret is correctly set
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('Stripe webhook secret missing in environment variables');
+      return res.status(500).json({ success: false, message: 'Webhook secret not configured' });
+    }
+    
+    console.log('Constructing Stripe event with secret ending with:', webhookSecret.substring(webhookSecret.length - 4));
+    
     const event = stripe.webhooks.constructEvent(
       req.body,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET as string
+      webhookSecret
     );
     
+    console.log('Successfully constructed event:', event.type);
+    
+    // Handle checkout.session.completed event
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.metadata?.userId;
       
+      console.log('Checkout session completed for user:', userId);
+      
       if (userId) {
         // Update user subscription
-        await updateUserSubscription(userId);
+        await updateUserSubscription(userId, session.id, 'stripe');
         console.log(`User ${userId} upgraded to Pro plan via Stripe Checkout`);
+      } else {
+        console.error('Missing userId in session metadata');
       }
     }
-    // Process the event
+    
+    // Process other events as needed
     await handleStripeWebhook(event);
     
+    console.log('Webhook processed successfully');
     res.status(200).json({ received: true });
   } catch (error: any) {
     console.error('Stripe webhook error:', error);
@@ -266,6 +290,36 @@ export const cancelSubscription = CatchAsyncError(async (req: Request, res: Resp
         message: "Subscription cancelled successfully"
       });
     }
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
+
+// Get payment history
+export const getPaymentHistory = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return next(new ErrorHandler("Authentication required", 401));
+    }
+    
+    const userId = req.user._id;
+    
+    // Find subscription
+    const subscription = await Subscription.findOne({ userId });
+    
+    if (!subscription) {
+      // If no subscription found, return empty payment history
+      return res.status(200).json({
+        success: true,
+        payments: []
+      });
+    }
+    
+    // Return payment history from subscription
+    res.status(200).json({
+      success: true,
+      payments: subscription.paymentHistory || []
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }
