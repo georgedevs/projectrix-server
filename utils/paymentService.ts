@@ -285,12 +285,23 @@ export async function updateUserSubscription(
   try {
     console.log(`Updating subscription for user: ${userId} via ${provider}`);
     
-    // Update user to pro plan
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      console.error(`User not found: ${userId}`);
+      throw new Error(`User not found: ${userId}`);
+    }
+    
+    // Calculate expiry date (30 days from now)
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+    
+    // Update user to pro plan - ensure this succeeds
     const updatedUser = await User.findByIdAndUpdate(
       userId, 
       {
         plan: 'pro',
-        planExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        planExpiryDate: expiryDate,
         projectIdeasLeft: 999999, // Effectively unlimited
         collaborationRequestsLeft: 999999 // Effectively unlimited
       },
@@ -314,8 +325,8 @@ export async function updateUserSubscription(
       status: 'active',
       plan: 'pro',
       startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      endDate: expiryDate,
+      renewalDate: expiryDate,
       provider: {
         name: provider
       }
@@ -328,11 +339,11 @@ export async function updateUserSubscription(
       subscriptionData.provider.flutterwaveTransactionRef = providerId;
     }
     
-    // Create or update subscription
+    // Create or update subscription - use findOneAndUpdate with upsert
     const subscription = await Subscription.findOneAndUpdate(
       { userId },
       subscriptionData,
-      { upsert: true, new: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     
     console.log(`Subscription updated: ${subscription._id}`);

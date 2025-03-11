@@ -11,7 +11,6 @@ import {
   getPaymentHistory
 } from '../controller/paymentController';
 import { isAuthenticated } from '../middleware/auth';
-import { isAdmin } from '../middleware/isAdmin';
 
 const paymentRouter = express.Router();
 
@@ -26,8 +25,6 @@ paymentRouter.get('/subscription', isAuthenticated, getSubscriptionStatus);
 paymentRouter.post('/cancel', isAuthenticated, cancelSubscription);
 paymentRouter.get('/payment-history', isAuthenticated, getPaymentHistory);
 
-// Admin routes
-paymentRouter.post('/manual-upgrade', isAuthenticated, isAdmin, manualUpgrade);
 
 
 

@@ -8,9 +8,9 @@ import {
   createStripePaymentSession, 
   createFlutterwavePayment, 
   verifyFlutterwavePayment, 
-  handleStripeWebhook,
   getPricingForLocation,
-  updateUserSubscription
+  updateUserSubscription,
+  addPaymentToHistory
 } from '../utils/paymentService';
 import Stripe from 'stripe';
 
@@ -117,6 +117,7 @@ export const verifyPayment = CatchAsyncError(async (req: Request, res: Response,
 });
 
 // Handle Stripe webhook
+
 export const stripeWebhook = async (req: Request, res: Response) => {
   const signature = req.headers['stripe-signature'] as string;
   
@@ -135,7 +136,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       apiVersion: '2025-02-24.acacia',
     });
     
-    // Ensure the webhook secret is correctly set
+
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!webhookSecret) {
       console.error('Stripe webhook secret missing in environment variables');
@@ -144,36 +145,115 @@ export const stripeWebhook = async (req: Request, res: Response) => {
     
     console.log('Constructing Stripe event with secret ending with:', webhookSecret.substring(webhookSecret.length - 4));
     
-    const event = stripe.webhooks.constructEvent(
-      req.body,
-      signature,
-      webhookSecret
-    );
-    
-    console.log('Successfully constructed event:', event.type);
-    
-    // Handle checkout.session.completed event
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const userId = session.metadata?.userId;
-      
-      console.log('Checkout session completed for user:', userId);
-      
-      if (userId) {
-        // Update user subscription
-        await updateUserSubscription(userId, session.id, 'stripe');
-        console.log(`User ${userId} upgraded to Pro plan via Stripe Checkout`);
-      } else {
-        console.error('Missing userId in session metadata');
-      }
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        webhookSecret
+      );
+    } catch (err) {
+      console.error('Error constructing event:', err.message);
+      return res.status(400).json({ success: false, message: `Webhook signature verification failed: ${err.message}` });
     }
     
-    // Process other events as needed
-    await handleStripeWebhook(event);
-    
-    console.log('Webhook processed successfully');
+    console.log('Successfully constructed event:', event.type);
     res.status(200).json({ received: true });
-  } catch (error: any) {
+    
+    // Process the event asynchronously
+    (async () => {
+      try {
+        switch (event.type) {
+          case 'checkout.session.completed': {
+            console.log('Processing checkout.session.completed event');
+            const session = event.data.object as Stripe.Checkout.Session;
+            
+            // Get user ID from metadata
+            let userId = session.metadata?.userId;
+            
+            // If userId isn't in metadata, try to get it from the customer
+            if (!userId && session.customer) {
+              try {
+                const customer = await stripe.customers.retrieve(session.customer as string);
+                if (customer && !customer.deleted && customer.metadata?.userId) {
+                  userId = customer.metadata.userId;
+                }
+              } catch (customerErr) {
+                console.error('Error retrieving customer:', customerErr);
+              }
+            }
+            
+            console.log('Found userId:', userId);
+            
+            if (userId) {
+              try {
+                // Update user subscription
+                await updateUserSubscription(userId, session.id, 'stripe');
+                console.log(`User ${userId} upgraded to Pro plan via Stripe Checkout`);
+              } catch (updateErr) {
+                console.error('Error updating subscription:', updateErr);
+              }
+            } else {
+              console.error('Missing userId in session metadata and customer metadata');
+            }
+            break;
+          }
+            
+          case 'invoice.payment_succeeded': {
+            console.log('Processing invoice.payment_succeeded event');
+            const invoice = event.data.object as Stripe.Invoice;
+            if (invoice.subscription) {
+              try {
+                // Get the subscription
+                const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
+                
+                // Get user ID from metadata
+                let userId = subscription.metadata?.userId;
+                
+                // If userId isn't in metadata, try to get it from the customer
+                if (!userId && subscription.customer) {
+                  try {
+                    const customer = await stripe.customers.retrieve(subscription.customer as string);
+                    if (customer && !customer.deleted && customer.metadata?.userId) {
+                      userId = customer.metadata.userId;
+                    }
+                  } catch (customerErr) {
+                    console.error('Error retrieving customer:', customerErr);
+                  }
+                }
+                
+                console.log('Found userId for invoice:', userId);
+                
+                if (userId) {
+                  // Add payment to history
+                  await addPaymentToHistory(
+                    userId,
+                    invoice.amount_paid / 100, // Convert from cents to dollars
+                    invoice.currency.toUpperCase(),
+                    invoice.id,
+                    'stripe',
+                    'successful'
+                  );
+                  
+                  // Update user subscription
+                  await updateUserSubscription(userId);
+                  console.log(`Payment succeeded for user ${userId}`);
+                } else {
+                  console.error('Missing userId in subscription metadata and customer metadata');
+                }
+              } catch (err) {
+                console.error('Error processing invoice.payment_succeeded:', err);
+              }
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        console.error('Error processing webhook event:', err);
+      }
+    })();
+    
+  } catch (error) {
     console.error('Stripe webhook error:', error);
     res.status(400).json({ success: false, message: error.message });
   }
@@ -211,6 +291,7 @@ export const manualUpgrade = CatchAsyncError(async (req: Request, res: Response,
 });
 
 // Get subscription status
+
 export const getSubscriptionStatus = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.user) {
@@ -219,10 +300,44 @@ export const getSubscriptionStatus = CatchAsyncError(async (req: Request, res: R
     
     const userId = req.user._id;
     
-    // Get subscription information
+    // First check the user's plan in the User model
+    const user = await User.findById(userId).select('plan planExpiryDate');
+    
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+    
+    // Get subscription information from the Subscription model
     const subscription = await Subscription.findOne({ userId });
     
-    if (!subscription) {
+    // If user is Pro but no subscription record exists, create one
+    if (user.plan === 'pro' && !subscription) {
+      const endDate = user.planExpiryDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      
+      // Create a new subscription record
+      const newSubscription = await Subscription.create({
+        userId,
+        status: 'active',
+        plan: 'pro',
+        startDate: new Date(),
+        endDate,
+        renewalDate: endDate,
+        provider: {
+          name: 'stripe' // Default provider
+        }
+      });
+      
+      return res.status(200).json({
+        success: true,
+        status: 'active',
+        plan: 'pro',
+        endDate,
+        renewalDate: endDate
+      });
+    }
+    
+    // If no subscription and user is not pro
+    if (!subscription && user.plan !== 'pro') {
       return res.status(200).json({
         success: true,
         status: 'none',
@@ -230,10 +345,17 @@ export const getSubscriptionStatus = CatchAsyncError(async (req: Request, res: R
       });
     }
     
+    // Validate subscription status against user plan
+    if (subscription && user.plan !== subscription.plan) {
+      // Update subscription to match user plan
+      subscription.plan = user.plan;
+      await subscription.save();
+    }
+    
     res.status(200).json({
       success: true,
       status: subscription.status,
-      plan: subscription.plan,
+      plan: user.plan, // Use user.plan as the source of truth
       endDate: subscription.endDate,
       renewalDate: subscription.renewalDate
     });
@@ -324,3 +446,4 @@ export const getPaymentHistory = CatchAsyncError(async (req: Request, res: Respo
     return next(new ErrorHandler(error.message, 500));
   }
 });
+

@@ -102,7 +102,7 @@ declare global {
 
 export const isAuthenticated = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Define public routes that don't require authentication
+    // public routes that don't require authentication
     const publicRoutes = [
       '/published-projects',
       '/published-projects/technologies',

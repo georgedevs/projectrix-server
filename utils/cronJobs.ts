@@ -41,4 +41,4 @@ export const setupCronJobs = () => {
   });
   
   console.log('Cron jobs initialized');
-};
+}; 
