@@ -13,6 +13,7 @@ import {
   addPaymentToHistory
 } from '../utils/paymentService';
 import Stripe from 'stripe';
+import { redis } from '../utils/redis';
 
 // Get pricing information based on user location
 export const getPricing = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -101,15 +102,37 @@ export const verifyPayment = CatchAsyncError(async (req: Request, res: Response,
       return next(new ErrorHandler("Transaction ID is required", 400));
     }
     
-    const result = await verifyFlutterwavePayment(transactionId);
+    // Add transaction ID tracking to prevent multiple verifications
+    const verificationKey = `flw_verify:${transactionId}`;
+    const alreadyVerified = await redis.get(verificationKey);
     
-    if (result.success) {
-      res.status(200).json({
+    if (alreadyVerified) {
+      console.log(`Transaction ${transactionId} was already verified, skipping duplicate verification`);
+      return res.status(200).json({
         success: true,
-        message: "Payment verified successfully"
+        message: "Payment already verified"
       });
-    } else {
-      return next(new ErrorHandler("Payment verification failed", 400));
+    }
+    
+    // Set verification in progress flag with 5-minute expiry
+    await redis.set(verificationKey, 'verifying', 'EX', 300);
+    
+    try {
+      const result = await verifyFlutterwavePayment(transactionId);
+      
+      // Mark as verified with 24-hour expiry
+      if (result.success) {
+        await redis.set(verificationKey, 'verified', 'EX', 86400);
+      }
+      
+      return res.status(200).json({
+        success: result.success,
+        message: result.message
+      });
+    } catch (error) {
+      // Remove verification flag on error to allow retry
+      await redis.del(verificationKey);
+      throw error;
     }
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
@@ -447,3 +470,91 @@ export const getPaymentHistory = CatchAsyncError(async (req: Request, res: Respo
   }
 });
 
+// Handle Flutterwave webhook
+export const flutterwaveWebhook = async (req: Request, res: Response) => {
+  try {
+    console.log('Received Flutterwave webhook', {
+      eventType: req.body['event.type'] || req.body.event,
+      txRef: req.body.txRef,
+      status: req.body.status
+    });
+    
+    // This is important: Always respond with 200 OK immediately
+    // to prevent Flutterwave from retrying the webhook
+    // Process the webhook asynchronously after responding
+    const response = {
+      status: 'success',
+      message: 'Webhook received successfully'
+    };
+    
+    // First send the response, then process
+    res.status(200).json(response);
+    
+    // Now process the webhook asynchronously
+    (async () => {
+      try {
+        // Extract transaction data
+        const { txRef, status, amount, currency } = req.body;
+        
+        if (status !== 'successful') {
+          console.log(`Ignoring non-successful transaction: ${txRef} with status: ${status}`);
+          return;
+        }
+        
+        // Process only once using Redis
+        const webhookKey = `flw_webhook:${txRef}`;
+        const processed = await redis.get(webhookKey);
+        
+        if (processed) {
+          console.log(`Webhook for transaction ${txRef} was already processed, skipping`);
+          return;
+        }
+        
+        // Mark as being processed with 5-minute expiry
+        await redis.set(webhookKey, 'processing', 'EX', 300);
+        
+        try {
+          // Extract userId from txRef (format: projectrix-timestamp-userId)
+          const parts = txRef.split('-');
+          if (parts.length < 3) {
+            console.error(`Invalid transaction reference format: ${txRef}`);
+            return;
+          }
+          
+          const userId = parts[2];
+          console.log(`Processing webhook for user: ${userId} with txRef: ${txRef}`);
+          
+          // Record payment history
+          await addPaymentToHistory(
+            userId,
+            amount,
+            currency,
+            txRef,
+            'flutterwave',
+            'successful'
+          );
+          
+          // Update user subscription
+          await updateUserSubscription(userId, txRef, 'flutterwave');
+          
+          // Mark as processed with 7-day expiry
+          await redis.set(webhookKey, 'processed', 'EX', 7 * 24 * 60 * 60);
+          console.log(`Successfully processed webhook for transaction ${txRef}`);
+        } catch (error) {
+          console.error(`Error processing webhook for transaction ${txRef}:`, error);
+          // Remove processing flag on error to allow retry
+          await redis.del(webhookKey);
+        }
+      } catch (error) {
+        console.error('Error processing webhook asynchronously:', error);
+      }
+    })();
+  } catch (error) {
+    console.error('Error in flutterwaveWebhook:', error);
+    // Always return 200 even on error to prevent retries
+    res.status(200).json({
+      status: 'success',
+      message: 'Webhook received'
+    });
+  }
+};

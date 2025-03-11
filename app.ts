@@ -26,8 +26,15 @@ app.post("/api/v1/webhooks/stripe",
     }
   );
 
-  
+  app.post("/api/v1/webhook/flutterwave", 
+    express.json(),  
+    (req, res) => {
+      const { flutterwaveWebhook } = require('./controller/paymentController');
+      flutterwaveWebhook(req, res);
+    }
+  );
 
+  
 app.use(express.json({limit:"50mb"}));
 
 app.use(cookieParser());

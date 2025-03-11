@@ -52,8 +52,14 @@ const subscriptionSchema: Schema<ISubscription> = new mongoose.Schema({
   renewalDate: {
     type: Date,
     default: function() {
-      // Default renewal date is 30 days from start date
-      const date = new Date(this.startDate);
+      
+      if (this.startDate) {
+        const date = new Date(this.startDate);
+        date.setDate(date.getDate() + 30);
+        return date;
+      }
+      // If startDate doesn't exist, set renewal 30 days from now
+      const date = new Date();
       date.setDate(date.getDate() + 30);
       return date;
     }

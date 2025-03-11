@@ -109,10 +109,10 @@ export async function createFlutterwavePayment(
   phoneNumber: string = ''
 ) {
   try {
-    // Generate a transaction reference
+    // Generate a unique transaction reference that includes the userId
     const txRef = `projectrix-${Date.now()}-${userId}`;
 
-    // Create a payment link 
+    // Create payment data with better metadata
     const paymentData = {
       tx_ref: txRef,
       amount: PAYMENT_CONFIG.NGN.amount / 100, // Convert from kobo to naira (5000)
@@ -129,10 +129,14 @@ export async function createFlutterwavePayment(
         logo: `${process.env.FRONTEND_URL}/logo.png`
       },
       meta: {
-        userId
+        userId,
+        productType: 'subscription'
       }
     };
 
+    // Log payment request
+    console.log('Creating Flutterwave payment for user:', userId);
+    
     // Use the standard endpoint to create a payment link
     const response = await axios.post(
       'https://api.flutterwave.com/v3/payments',
@@ -145,22 +149,34 @@ export async function createFlutterwavePayment(
     );
 
     if (response.data && response.data.status === 'success') {
+      console.log('Flutterwave payment link created:', {
+        link: response.data.data.link,
+        txRef
+      });
+      
       return {
         paymentLink: response.data.data.link,
         transactionRef: txRef
       };
     } else {
-      throw new Error('Failed to create payment link');
+      // Log error details
+      console.error('Failed to create Flutterwave payment link:', response.data);
+      throw new Error(response.data.message || 'Failed to create payment link');
     }
   } catch (error) {
-    console.error('Flutterwave payment error:', error);
-    throw new ErrorHandler('Failed to create payment link', 500);
+    console.error('Flutterwave payment error:', error.response?.data || error);
+    throw new ErrorHandler(error.response?.data?.message || error.message || 'Failed to create payment link', 500);
   }
 }
+
 
 // Verify Flutterwave payment
 export async function verifyFlutterwavePayment(transactionId: string) {
   try {
+    // Log the verification attempt
+    console.log(`Verifying Flutterwave transaction: ${transactionId}`);
+    
+    // Use Flutterwave API to verify payment
     const response = await axios.get(
       `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`,
       {
@@ -170,42 +186,74 @@ export async function verifyFlutterwavePayment(transactionId: string) {
       }
     );
     
+    console.log('Flutterwave verification response:', {
+      status: response.data.status,
+      dataStatus: response.data.data?.status
+    });
+    
     if (response.data.status === 'success' && 
         response.data.data.status === 'successful') {
-      // Extract userId from meta data or transaction reference
-      const txRef = response.data.data.tx_ref;
-      // The format should be projectrix-timestamp-userId
-      const userId = txRef.split('-')[2];
-
-      await addPaymentToHistory(
-        userId,
-        response.data.amount,
-        response.data.currency,
-        response.data.tx_ref,
-        'flutterwave',
-        'successful'
-      );
+      // Extract transaction data
+      const { tx_ref, amount, currency } = response.data.data;
       
-      if (userId) {
+      // Extract userId from tx_ref (format: projectrix-timestamp-userId)
+      const parts = tx_ref.split('-');
+      if (parts.length < 3) {
+        console.error(`Invalid transaction reference format: ${tx_ref}`);
+        return {
+          success: false,
+          message: 'Invalid transaction reference format'
+        };
+      }
+      
+      const userId = parts[2];
+      console.log(`Extracted userId: ${userId} from tx_ref: ${tx_ref}`);
+      
+      try {
+        // Record payment
+        await addPaymentToHistory(
+          userId,
+          amount,
+          currency,
+          tx_ref,
+          'flutterwave',
+          'successful'
+        );
+        
         // Update user subscription
-        await updateUserSubscription(userId, txRef, 'flutterwave');
+        await updateUserSubscription(userId, tx_ref, 'flutterwave');
         
         return {
           success: true,
           message: 'Payment verified successfully'
         };
+      } catch (error) {
+        console.error('Error updating subscription after verification:', error);
+        
+        // Check if the user is already on pro plan
+        const user = await User.findById(userId);
+        if (user && user.plan === 'pro') {
+          console.log(`User ${userId} is already on Pro plan, considering payment successful`);
+          return {
+            success: true,
+            message: 'User already has an active subscription'
+          };
+        }
+        
+        throw error;
       }
+    } else {
+      return {
+        success: false,
+        message: response.data.message || 'Payment verification failed'
+      };
     }
-    
-    return {
-      success: false,
-      message: 'Payment verification failed'
-    };
   } catch (error) {
     console.error('Flutterwave verification error:', error);
-    throw new ErrorHandler('Failed to verify payment', 500);
+    throw new ErrorHandler(error.response?.data?.message || error.message || 'Failed to verify payment', 500);
   }
 }
+
 
 // Handle Stripe webhook events
 export async function handleStripeWebhook(event: Stripe.Event) {
@@ -285,6 +333,7 @@ export async function updateUserSubscription(
   try {
     console.log(`Updating subscription for user: ${userId} via ${provider}`);
     
+    // First update the user plan
     const user = await User.findById(userId);
     
     if (!user) {
@@ -292,63 +341,113 @@ export async function updateUserSubscription(
       throw new Error(`User not found: ${userId}`);
     }
     
-    // Calculate expiry date (30 days from now)
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 30);
-    
-    // Update user to pro plan - ensure this succeeds
-    const updatedUser = await User.findByIdAndUpdate(
-      userId, 
-      {
-        plan: 'pro',
-        planExpiryDate: expiryDate,
-        projectIdeasLeft: 999999, // Effectively unlimited
-        collaborationRequestsLeft: 999999 // Effectively unlimited
-      },
-      { new: true }
-    );
-    
-    if (!updatedUser) {
-      console.error(`User not found: ${userId}`);
-      throw new Error(`User not found: ${userId}`);
-    }
-    
-    console.log(`User plan updated to: ${updatedUser.plan}`);
-    
-    // Update Redis cache with fresh user data
-    await redis.set(updatedUser.githubId, JSON.stringify(updatedUser), 'EX', 3600);
-    console.log('User data cached in Redis');
-    
-    // Create or update subscription record
-    const subscriptionData: any = {
-      userId,
-      status: 'active',
-      plan: 'pro',
-      startDate: new Date(),
-      endDate: expiryDate,
-      renewalDate: expiryDate,
-      provider: {
-        name: provider
-      }
-    };
-    
-    // Add provider-specific data
-    if (provider === 'stripe') {
-      subscriptionData.provider.stripeSubscriptionId = providerId;
+    // Check if user is already on pro plan to avoid duplicate operations
+    if (user.plan === 'pro') {
+      console.log(`User ${userId} is already on Pro plan, skipping plan update`);
     } else {
-      subscriptionData.provider.flutterwaveTransactionRef = providerId;
+      // Calculate expiry date (30 days from now)
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 30);
+      
+      // Update user to pro plan
+      const updatedUser = await User.findByIdAndUpdate(
+        userId, 
+        {
+          plan: 'pro',
+          planExpiryDate: expiryDate,
+          projectIdeasLeft: 999999, // Effectively unlimited
+          collaborationRequestsLeft: 999999 // Effectively unlimited
+        },
+        { new: true }
+      );
+      
+      if (!updatedUser) {
+        throw new Error(`Failed to update user plan: ${userId}`);
+      }
+      
+      console.log(`User plan updated to: ${updatedUser.plan}`);
+      
+      // Update Redis cache with fresh user data
+      await redis.set(updatedUser.githubId, JSON.stringify(updatedUser), 'EX', 3600);
+      console.log('User data cached in Redis');
     }
     
-    // Create or update subscription - use findOneAndUpdate with upsert
-    const subscription = await Subscription.findOneAndUpdate(
-      { userId },
-      subscriptionData,
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    
-    console.log(`Subscription updated: ${subscription._id}`);
-    
-    return true;
+    // Now update the subscription record - create if it doesn't exist
+    try {
+      // First check if a subscription already exists
+      const existingSubscription = await Subscription.findOne({ userId });
+      
+      if (existingSubscription) {
+        // Update existing subscription
+        existingSubscription.status = 'active';
+        existingSubscription.plan = 'pro';
+        
+        // Only update start date if not already set
+        if (!existingSubscription.startDate) {
+          existingSubscription.startDate = new Date();
+        }
+        
+        // Set end date 30 days from now
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 30);
+        
+        existingSubscription.endDate = endDate;
+        existingSubscription.renewalDate = endDate;
+        
+        // Update provider info
+        if (provider === 'stripe') {
+          existingSubscription.provider.name = 'stripe';
+          if (providerId) {
+            existingSubscription.provider.stripeSubscriptionId = providerId;
+          }
+        } else {
+          existingSubscription.provider.name = 'flutterwave';
+          if (providerId) {
+            existingSubscription.provider.flutterwaveTransactionRef = providerId;
+          }
+        }
+        
+        await existingSubscription.save();
+        console.log(`Updated existing subscription: ${existingSubscription._id}`);
+      } else {
+        // Create new subscription document with all required fields explicitly set
+        const now = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 30);
+        
+        const subscriptionData: any = {
+          userId,
+          status: 'active',
+          plan: 'pro',
+          startDate: now,
+          endDate: endDate,
+          renewalDate: endDate,
+          provider: {
+            name: provider
+          }
+        };
+        
+        // Add provider-specific data
+        if (provider === 'stripe') {
+          subscriptionData.provider.stripeSubscriptionId = providerId;
+        } else {
+          subscriptionData.provider.flutterwaveTransactionRef = providerId;
+        }
+        
+        // Create new subscription
+        const subscription = await Subscription.create(subscriptionData);
+        console.log(`Created new subscription: ${subscription._id}`);
+      }
+      
+      return true;
+    } catch (subError) {
+      console.error('Error updating subscription record:', subError);
+      
+      // Even if subscription record update fails, user plan was already updated
+      // so consider it a partial success
+      console.log('User plan was updated successfully despite subscription record error');
+      return true;
+    }
   } catch (error) {
     console.error('Update subscription error:', error);
     throw new ErrorHandler('Failed to update subscription', 500);
