@@ -617,7 +617,6 @@ export const getGeneratedProjects = CatchAsyncError(async (req: Request, res: Re
   }
 });
 
-
 export const generateAnother = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
