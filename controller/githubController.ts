@@ -174,53 +174,57 @@ export const createGitHubRepository = CatchAsyncError(async (req: Request, res: 
  * Get GitHub repository status for a project
  */
 export const getGitHubRepositoryStatus = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!req.user) {
-      return next(new ErrorHandler("Authentication required", 401));
-    }
-    
-    const { projectId } = req.params;
-    
-    // Verify project belongs to user or user is a collaborator
-    const project = await GeneratedProject.findById(projectId);
-    
-    if (!project) {
-      return next(new ErrorHandler("Project not found", 404));
-    }
-    
-    // Check if user is owner or collaborator
-    const isOwner = project.userId.toString() === req.user._id.toString();
-    const isCollaborator = project.teamMembers?.some(
-      member => member.userId.toString() === req.user._id.toString()
-    );
-    
-    if (!isOwner && !isCollaborator) {
-      return next(new ErrorHandler("You don't have permission to access this project", 403));
-    }
-    
-    // Check if project has GitHub info
-    if (!project.githubInfo) {
-      return res.status(200).json({
-        success: true,
-        hasRepository: false,
-        message: "No GitHub repository created for this project"
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      hasRepository: true,
-      repository: {
-        owner: project.githubInfo.repoOwner,
-        name: project.githubInfo.repoName,
-        url: project.githubInfo.repoUrl,
-        createdAt: project.githubInfo.createdAt
+    try {
+      if (!req.user) {
+        return next(new ErrorHandler("Authentication required", 401));
       }
-    });
-  } catch (error: any) {
-    return next(new ErrorHandler(error.message, 500));
-  }
-});
+      
+      const { projectId } = req.params;
+      
+      // Verify project belongs to user or user is a collaborator
+      const project = await GeneratedProject.findById(projectId);
+      
+      if (!project) {
+        return next(new ErrorHandler("Project not found", 404));
+      }
+      
+      // Check if user is owner or collaborator
+      const isOwner = project.userId.toString() === req.user._id.toString();
+      const isCollaborator = project.teamMembers?.some(
+        member => member.userId.toString() === req.user._id.toString()
+      );
+      
+      if (!isOwner && !isCollaborator) {
+        return next(new ErrorHandler("You don't have permission to access this project", 403));
+      }
+      
+      // Check if project has GitHub info
+      if (!project.githubInfo) {
+        return res.status(200).json({
+          success: true,
+          hasRepository: false,
+          message: "No GitHub repository created for this project"
+        });
+      }
+      
+      // Log repository data for debugging
+      console.log('Repository info from database:', project.githubInfo);
+      
+      res.status(200).json({
+        success: true,
+        hasRepository: true,
+        repository: {
+          owner: project.githubInfo.repoOwner,
+          name: project.githubInfo.repoName,
+          url: project.githubInfo.repoUrl,
+          html_url: project.githubInfo.repoUrl,  // Add html_url as a fallback
+          exists: true
+        }
+      });
+    } catch (error: any) {
+      return next(new ErrorHandler(error.message, 500));
+    }
+  });
 
 /**
  * Check GitHub authorization status
