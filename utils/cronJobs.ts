@@ -34,6 +34,21 @@ export const setupCronJobs = () => {
         updatedCount++;
       }
       
+      const allUsers = await User.find({ $or: [{ plan: 'free' }, { plan: 'pro' }] });
+
+for (const user of allUsers) {
+  // Reset project ideas based on plan
+  if (user.plan === 'pro') {
+    user.projectIdeasLeft = 10; // Reset to 10 for Pro users
+  } else {
+    user.projectIdeasLeft = 3; // Reset to 3 for Free users
+    user.collaborationRequestsLeft = 3;
+  }
+  await user.save();
+  
+  // Update Redis cache
+  await redis.set(user.githubId, JSON.stringify(user), 'EX', 3600);
+}
       console.log(`Successfully reset limits for ${updatedCount} free users.`);
     } catch (error) {
       console.error('Error resetting monthly limits:', error);

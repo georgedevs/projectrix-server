@@ -459,10 +459,13 @@ export const generateProject = CatchAsyncError(async (req: Request, res: Respons
     const user = req.user;
 
     console.log('👤 Checking project limits for user:', user._id);
-    if (user.projectIdeasLeft <= 0 && user.plan !== "pro") {
+    if (user.projectIdeasLeft <= 0) {
       console.log('❌ No project ideas left');
-      return next(new ErrorHandler("No project ideas left. Please upgrade to Pro plan.", 403));
+      return next(new ErrorHandler(user.plan === "pro" 
+        ? "You've reached your monthly project limit of 10 ideas. Please wait until next month for a refresh." 
+        : "No project ideas left. Please upgrade to Pro plan.", 403));
     }
+    
 
     // Validate technology and category combinations
     const validationResult = validateTechnologyCategoryPair(technologies, category);
@@ -577,20 +580,12 @@ export const generateProject = CatchAsyncError(async (req: Request, res: Respons
       project.title
     );
 
-    // Update user's stats - only decrement for free users
-    if (user.plan !== "pro") {
-      await User.findByIdAndUpdate(user._id, {
-        $inc: { 
-          projectIdeasLeft: -1,
-          projectsGenerated: 1
-        }
-      });
-    } else {
-      // For pro users, just increment the generated count
-      await User.findByIdAndUpdate(user._id, {
-        $inc: { projectsGenerated: 1 }
-      });
-    }
+    await User.findByIdAndUpdate(user._id, {
+      $inc: { 
+        projectIdeasLeft: -1,
+        projectsGenerated: 1
+      }
+    });
 
     // Update Redis cache with new user data
     const updatedUser = await User.findById(user._id);

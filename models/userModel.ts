@@ -24,12 +24,12 @@ export interface IUser extends Document {
   skills: string[];
   projectsGenerated: number;
   projectsCollaborated: number;
-  publishedProjectsCount: number; // New field to track published projects
+  publishedProjectsCount: number; 
   isAvailable: boolean;
   createdAt: Date;
   plan: string;
   projectIdeasLeft: number;
-  collaborationRequestsLeft: number; // New field for tracking collaboration requests
+  collaborationRequestsLeft: number; 
   planExpiryDate?: Date;
   startedProjects: IStartedProject[];
   collaborations: ICollaboration[];
@@ -113,7 +113,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
     type: Number,
     default: 3  // Free plan starts with 3 project ideas
   },
-  collaborationRequestsLeft: {  // For tracking collaboration request limits
+  collaborationRequestsLeft: { 
     type: Number,
     default: 3  // Free plan starts with 3 collaboration requests per month
   },

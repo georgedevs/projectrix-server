@@ -355,7 +355,7 @@ export async function updateUserSubscription(
         {
           plan: 'pro',
           planExpiryDate: expiryDate,
-          projectIdeasLeft: 999999, // Effectively unlimited
+          projectIdeasLeft: 10,
           collaborationRequestsLeft: 999999 // Effectively unlimited
         },
         { new: true }

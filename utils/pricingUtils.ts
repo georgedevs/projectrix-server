@@ -134,8 +134,8 @@ export const incrementPublishedProjects = async (userId: string): Promise<void> 
 export const initializeUserPlanLimits = (user: any): void => {
   // Set initial values based on plan
   if (user.plan === 'pro') {
-    // Pro users don't need limits tracked since they have unlimited access
-    user.projectIdeasLeft = 999999; // Effectively unlimited
+  
+    user.projectIdeasLeft = 10;
     user.collaborationRequestsLeft = 999999; // Effectively unlimited
   } else {
     // Free users get 3 project ideas and 3 collaboration requests per month
