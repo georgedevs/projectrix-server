@@ -107,8 +107,9 @@ export const isAuthenticated = async (req: Request, res: Response, next: NextFun
       '/published-projects',
       '/published-projects/technologies',
       '/published-projects/roles',
-      '/discord/callback'  ,
-      '/webhooks/stripe'
+      '/discord/callback',
+      '/webhooks/stripe',
+      '/github/callback'
     ];
 
     // Get the path without query parameters
