@@ -1,11 +1,10 @@
-// models/generateProject.model.ts
 import mongoose, { Document, Schema } from "mongoose";
 
 interface Role {
   title: string;
   skills: string[];
   responsibilities: string[];
-  filled: boolean; // Add this property
+  filled: boolean;
 }
 
 interface TeamMember {
@@ -16,6 +15,13 @@ interface TeamMember {
 
 interface TeamStructure {
   roles: Role[];
+}
+
+interface GitHubInfo {
+  repoOwner: string;
+  repoName: string;
+  repoUrl: string;
+  createdAt: Date;
 }
 
 export interface IGeneratedProject extends Document {
@@ -49,6 +55,7 @@ export interface IGeneratedProject extends Document {
   createdAt: Date;
   discordChannelId?: string;
   discordInviteLink?: string;
+  githubInfo?: GitHubInfo;
 }
 
 const generatedProjectSchema = new Schema<IGeneratedProject>({
@@ -138,7 +145,7 @@ const generatedProjectSchema = new Schema<IGeneratedProject>({
       }],
       filled: {
         type: Boolean,
-        default: false // Default to not filled
+        default: false
       }
     }]
   },
@@ -173,6 +180,15 @@ const generatedProjectSchema = new Schema<IGeneratedProject>({
   isPublished: {
     type: Boolean,
     default: false
+  },
+  githubInfo: {
+    repoOwner: String,
+    repoName: String,
+    repoUrl: String,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
   },
   createdAt: {
     type: Date,

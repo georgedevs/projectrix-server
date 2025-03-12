@@ -2,12 +2,11 @@
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import ErrorHandler from './ErrorHandler';
-import GeneratedProject from '../models/generateProject.model';
 import User from '../models/userModel';
 import { generateProjectReadme } from './githubTemplates';
-import { generateRoleBreakdowns } from './githubAIService';
 import { redis } from './redis';
 import dotenv from 'dotenv';
+import { generateRoleBreakdowns } from './githubAiService';
 
 dotenv.config();
 

@@ -17,6 +17,7 @@ import { handleAIError } from "./utils/aiErrorHandler";
 import adminUsersRouter from "./routes/adminUsersRoutes";
 import analyticsRouter from "./routes/analyticsRoutes";
 import paymentRouter from "./routes/paymentRoutes";
+import githubRouter from "./routes/githubRoutes";
 
 app.post("/api/v1/webhooks/stripe", 
     express.raw({ type: 'application/json' }), 
@@ -53,6 +54,7 @@ app.use(requestLogger);
 app.use("/api/v1", userRouter);
 app.use("/api/v1", generateRouter);
 app.use("/api/v1",userProfileRouter);
+app.use("/api/v1", githubRouter);
 app.use("/api/v1",collaborationRouter);
 app.use("/api/v1", paymentRouter);
 app.use("/api/v1",publishedProjectsRouter);
