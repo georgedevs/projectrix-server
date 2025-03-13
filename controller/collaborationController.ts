@@ -16,6 +16,7 @@ import {
   isPricingEnabled
 } from '../utils/pricingUtils';
 import { redis } from '../utils/redis';
+import { getGitHubServiceForUser } from '../utils/githubService';
 
 // Submit a collaboration request
 export const submitCollaborationRequest = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -200,7 +201,7 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
       return next(new ErrorHandler("You don't have permission to update this request", 403));
     }
 
-  const applicant = await User.findById(request.applicantId);
+    const applicant = await User.findById(request.applicantId);
     if (!applicant) {
       return next(new ErrorHandler("Applicant not found", 404));
     }
@@ -268,6 +269,37 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
           request.applicantId,
           { $inc: { projectsCollaborated: 1 } }
         );
+
+        // If the project has a GitHub repository, add the new team member
+        if (project.githubInfo && project.githubInfo.repoOwner && project.githubInfo.repoName) {
+          try {
+            // Get the GitHub service for the project owner
+            const githubService = await getGitHubServiceForUser(userId.toString());
+            
+            if (githubService) {
+              // Get the GitHub username from the user document
+              const collaborator = await User.findById(request.applicantId);
+              
+              if (collaborator && collaborator.username) {
+                // Add as collaborator with appropriate permissions
+                const role = request.role;
+                const permission = determinePermissionLevel(role);
+                
+                await githubService.addCollaborator(
+                  project.githubInfo.repoOwner, 
+                  project.githubInfo.repoName, 
+                  collaborator.username, 
+                  permission
+                );
+                
+                console.log(`Added ${collaborator.username} as collaborator to repository`);
+              }
+            }
+          } catch (githubError) {
+            console.error('Error adding collaborator to GitHub repository:', githubError);
+            // Continue with the rest of the process even if GitHub integration fails
+          }
+        }
 
         if (isPricingEnabled() && applicant.plan === 'free') {
           const otherPendingRequests = await CollaborationRequest.find({
@@ -346,6 +378,20 @@ export const updateCollaborationRequestStatus = CatchAsyncError(async (req: Requ
     return next(new ErrorHandler(error.message, 500));
   }
 });
+
+// Helper function to determine permission level
+function determinePermissionLevel(role: string): 'admin' | 'push' | 'pull' {
+  // Default to write access (push)
+  const lowerRole = role.toLowerCase();
+  
+  if (lowerRole.includes('lead') || lowerRole.includes('senior') || lowerRole.includes('architect')) {
+    return 'admin';
+  } else if (lowerRole.includes('reviewer') || lowerRole.includes('tester')) {
+    return 'pull';
+  } else {
+    return 'push'; // Default write access
+  }
+}
 
 // Get user's active collaborations
 export const getMyCollaborations = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {

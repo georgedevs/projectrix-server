@@ -28,99 +28,150 @@ export class GitHubService {
     this.octokit = new Octokit({ auth: accessToken });
   }
   
-  /**
-   * Create a new repository for a project
-   * @param project The project data
-   * @param owner The project owner user object
-   * @param useOrganization Whether to use Projectrix organization or personal account
-   * @param isPrivate Whether the repository should be private
-   */
-  async createRepository(
-    project: any, 
-    owner: any, 
-    useOrganization: boolean = false,
-    isPrivate: boolean = true
-  ) {
+/**
+ * Create a new repository for a project
+ * @param project The project data
+ * @param owner The project owner user object
+ * @param useOrganization Whether to use Projectrix organization or personal account
+ * @param isPrivate Whether the repository should be private
+ */
+async createRepository(
+  project: any, 
+  owner: any, 
+  useOrganization: boolean = false,
+  isPrivate: boolean = true
+) {
+  try {
+    const repoName = this.sanitizeRepoName(project.title);
+    const orgName = process.env.GITHUB_ORG_NAME || 'projectrix-org';
+    
+    // Determine repo owner (organization or user)
+    const repoOwner = useOrganization ? orgName : this.username;
+    
+    // Check if repo already exists
     try {
-      const repoName = this.sanitizeRepoName(project.title);
-      const orgName = process.env.GITHUB_ORG_NAME || 'projectrix-org';
+      const { data: existingRepo } = await this.octokit.repos.get({
+        owner: repoOwner,
+        repo: repoName,
+      });
       
-      // Determine repo owner (organization or user)
-      const repoOwner = useOrganization ? orgName : this.username;
+      if (existingRepo) {
+        console.log(`Repository ${repoOwner}/${repoName} already exists`);
+        return {
+          owner: repoOwner,
+          name: repoName,
+          html_url: existingRepo.html_url,
+          exists: true
+        };
+      }
+    } catch (error) {
+      // Repo doesn't exist, continue with creation
+    }
+    
+    // Generate repository description
+    const description = `${project.subtitle} - A Projectrix generated project`;
+    
+    // Create the repository
+    const createParams: any = {
+      name: repoName,
+      description: description,
+      private: isPrivate,
+      auto_init: false, // We'll create files manually
+      has_issues: true,
+      has_projects: true,
+      has_wiki: true,
+    };
+    
+    let repoResponse;
+    
+    if (useOrganization) {
+      repoResponse = await this.octokit.repos.createInOrg({
+        org: orgName,
+        ...createParams
+      });
+    } else {
+      repoResponse = await this.octokit.repos.createForAuthenticatedUser(createParams);
+    }
+    
+    const { data: repo } = repoResponse;
+    
+    // Generate README and other base files
+    await this.createInitialFiles(repo.owner.login, repo.name, project);
+    
+    // Try to create project board but don't fail if it doesn't work
+    let projectBoard = null;
+    try {
+      projectBoard = await this.createProjectBoard(repo.owner.login, repo.name, project);
+    } catch (projectError) {
+      console.warn('Could not create project board (GitHub is deprecating this feature):', projectError.message);
+      // Continue without the project board
+    }
+    
+    // Generate role breakdowns and create issues
+    const roleBreakdowns = await generateRoleBreakdowns(project);
+    await this.createRoleDocuments(repo.owner.login, repo.name, roleBreakdowns);
+    
+    // Only create issues with project board if the board was created
+    if (projectBoard) {
+      await this.createIssuesFromBreakdowns(repo.owner.login, repo.name, roleBreakdowns, projectBoard.id);
+    } else {
+      // Create issues without project board
+      await this.createIssuesWithoutBoard(repo.owner.login, repo.name, roleBreakdowns);
+    }
+    
+    // Setup branch protection
+    await this.setupBranchProtection(repo.owner.login, repo.name);
+    
+    return {
+      owner: repo.owner.login,
+      name: repo.name,
+      html_url: repo.html_url,
+      exists: false
+    };
+  } catch (error) {
+    console.error('Error creating GitHub repository:', error);
+    throw new ErrorHandler(error.message || 'Failed to create GitHub repository', 500);
+  }
+}
+
+/**
+ * Create GitHub issues from role breakdowns without adding to a project board
+ */
+private async createIssuesWithoutBoard(repoOwner: string, repoName: string, roleBreakdowns: any) {
+  try {
+    // Create milestone for initial sprint
+    const { data: milestone } = await this.octokit.issues.createMilestone({
+      owner: repoOwner,
+      repo: repoName,
+      title: 'Sprint 1',
+      description: 'Initial project setup and core functionality',
+      due_on: this.calculateMilestoneDueDate(30) // 30 days from now
+    });
+    
+    // Create issues for each role
+    for (const role of Object.keys(roleBreakdowns)) {
+      const roleTasks = roleBreakdowns[role].tasks;
       
-      // Check if repo already exists
-      try {
-        const { data: existingRepo } = await this.octokit.repos.get({
+      for (const task of roleTasks) {
+        // Create the issue
+        await this.octokit.issues.create({
           owner: repoOwner,
           repo: repoName,
+          title: task.title,
+          body: task.description,
+          milestone: milestone.number,
+          labels: ['enhancement', role.toLowerCase().replace(/\s+/g, '-')]
         });
-        
-        if (existingRepo) {
-          console.log(`Repository ${repoOwner}/${repoName} already exists`);
-          return {
-            owner: repoOwner,
-            name: repoName,
-            html_url: existingRepo.html_url,
-            exists: true
-          };
-        }
-      } catch (error) {
-        // Repo doesn't exist, continue with creation
       }
-      
-      // Generate repository description
-      const description = `${project.subtitle} - A Projectrix generated project`;
-      
-      // Create the repository
-      const createParams: any = {
-        name: repoName,
-        description: description,
-        private: isPrivate,
-        auto_init: false, // We'll create files manually
-        has_issues: true,
-        has_projects: true,
-        has_wiki: true,
-      };
-      
-      let repoResponse;
-      
-      if (useOrganization) {
-        repoResponse = await this.octokit.repos.createInOrg({
-          org: orgName,
-          ...createParams
-        });
-      } else {
-        repoResponse = await this.octokit.repos.createForAuthenticatedUser(createParams);
-      }
-      
-      const { data: repo } = repoResponse;
-      
-      // Generate README and other base files
-      await this.createInitialFiles(repo.owner.login, repo.name, project);
-      
-      // Create project board
-      const projectBoard = await this.createProjectBoard(repo.owner.login, repo.name, project);
-      
-      // Generate role breakdowns and create issues
-      const roleBreakdowns = await generateRoleBreakdowns(project);
-      await this.createRoleDocuments(repo.owner.login, repo.name, roleBreakdowns);
-      await this.createIssuesFromBreakdowns(repo.owner.login, repo.name, roleBreakdowns, projectBoard.id);
-      
-      // Setup branch protection
-      await this.setupBranchProtection(repo.owner.login, repo.name);
-      
-      return {
-        owner: repo.owner.login,
-        name: repo.name,
-        html_url: repo.html_url,
-        exists: false
-      };
-    } catch (error) {
-      console.error('Error creating GitHub repository:', error);
-      throw new ErrorHandler(error.message || 'Failed to create GitHub repository', 500);
     }
+    
+    return true;
+  } catch (error) {
+    console.error('Error creating issues:', error);
+    // Don't throw error - this is a non-critical function
+    return false;
   }
-  
+}
   /**
    * Add collaborators to the repository based on project team roles
    */
@@ -170,6 +221,29 @@ export class GitHubService {
     }
   }
   
+  async addCollaborator(repoOwner: string, repoName: string, username: string, permission: 'admin' | 'push' | 'pull'): Promise<boolean> {
+  try {
+    // Skip owner if they're being added as a collaborator
+    if (username === this.username) {
+      console.log(`Skipping repository owner ${username} as collaborator`);
+      return true;
+    }
+    
+    // Add collaborator to repository
+    await this.octokit.repos.addCollaborator({
+      owner: repoOwner,
+      repo: repoName,
+      username: username,
+      permission: permission
+    });
+    
+    console.log(`Added ${username} as collaborator with ${permission} permission`);
+    return true;
+  } catch (error) {
+    console.error(`Error adding collaborator ${username}:`, error);
+    return false;
+  }
+}
   /**
    * Create initial repository files including README
    */

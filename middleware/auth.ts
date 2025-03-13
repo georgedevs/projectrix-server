@@ -119,7 +119,8 @@ export const isAuthenticated = async (req: Request, res: Response, next: NextFun
     const isPublicRoute = publicRoutes.includes(path) || 
                           path.startsWith('/published-projects/') ||
                           path.startsWith('/webooks/') ||
-                          path.startsWith('/discord/callback'); 
+                          path.startsWith('/discord/callback') ||
+                          path.startsWith('/github/callback'); 
     
     if (isPublicRoute) {
       return next(); // Skip authentication for public routes

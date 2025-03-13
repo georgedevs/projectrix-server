@@ -6,7 +6,8 @@ import {
   createGitHubRepository,
   getGitHubRepositoryStatus,
   checkGitHubAuthStatus,
-  revokeGitHubAuth
+  revokeGitHubAuth,
+  getInvitationStatus
 } from '../controller/githubController';
 import { isAuthenticated } from '../middleware/auth';
 
@@ -23,5 +24,6 @@ githubRouter.get('/github/repository/:projectId', isAuthenticated, getGitHubRepo
 // GitHub Auth status routes
 githubRouter.get('/github/auth-status', isAuthenticated, checkGitHubAuthStatus);
 githubRouter.post('/github/revoke-auth', isAuthenticated, revokeGitHubAuth);
+githubRouter.get('/github/invitation-status/:projectId', isAuthenticated, getInvitationStatus);
 
 export default githubRouter;

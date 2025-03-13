@@ -199,7 +199,7 @@ export const getGitHubRepositoryStatus = CatchAsyncError(async (req: Request, re
       }
       
       // Check if project has GitHub info
-      if (!project.githubInfo) {
+      if (!project.githubInfo || !project.githubInfo.repoUrl) {
         return res.status(200).json({
           success: true,
           hasRepository: false,
@@ -214,10 +214,10 @@ export const getGitHubRepositoryStatus = CatchAsyncError(async (req: Request, re
         success: true,
         hasRepository: true,
         repository: {
-          owner: project.githubInfo.repoOwner,
-          name: project.githubInfo.repoName,
+          owner: project.githubInfo.repoOwner || "",
+          name: project.githubInfo.repoName || "",
           url: project.githubInfo.repoUrl,
-          html_url: project.githubInfo.repoUrl,  // Add html_url as a fallback
+          html_url: project.githubInfo.repoUrl,
           exists: true
         }
       });
@@ -283,6 +283,90 @@ export const revokeGitHubAuth = CatchAsyncError(async (req: Request, res: Respon
     res.status(200).json({
       success: true,
       message: "GitHub authorization successfully revoked"
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
+
+export const getInvitationStatus = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return next(new ErrorHandler("Authentication required", 401));
+    }
+    
+    const { projectId } = req.params;
+    
+    // Find the project
+    const project = await GeneratedProject.findById(projectId);
+    if (!project || !project.githubInfo) {
+      return res.status(200).json({
+        success: true,
+        status: 'none'
+      });
+    }
+    
+    // Check if user is a collaborator
+    const isCollaborator = project.teamMembers?.some(
+      member => member.userId.toString() === req.user._id.toString()
+    );
+    
+    if (!isCollaborator) {
+      return res.status(200).json({
+        success: true,
+        status: 'none'
+      });
+    }
+    
+    // Get GitHub token
+    const token = await redis.get(`github:token:${req.user._id}`);
+    if (!token) {
+      return res.status(200).json({
+        success: true,
+        status: 'none'
+      });
+    }
+    
+    // Check invitation status
+    const octokit = new Octokit({ auth: token });
+    
+    try {
+      // Check if user already has access to the repo
+      await octokit.repos.get({
+        owner: project.githubInfo.repoOwner,
+        repo: project.githubInfo.repoName
+      });
+      
+      // If no error, user has access
+      return res.status(200).json({
+        success: true,
+        status: 'accepted'
+      });
+    } catch (accessError: any) {
+      // If 404, user doesn't have access yet
+      if (accessError.status === 404) {
+        // Check for pending invitations
+        const invitations = await octokit.repos.listInvitationsForAuthenticatedUser();
+        
+        const hasPendingInvite = invitations.data.some(
+          invite => 
+            invite.repository?.full_name === 
+            `${project.githubInfo.repoOwner}/${project.githubInfo.repoName}`
+        );
+        
+        if (hasPendingInvite) {
+          return res.status(200).json({
+            success: true,
+            status: 'pending'
+          });
+        }
+      }
+    }
+    
+    // Default to no invitation
+    return res.status(200).json({
+      success: true,
+      status: 'none'
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
