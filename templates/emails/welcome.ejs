@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Projectrix</title>
+  <style>
+    /* Reset styles */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background-color: #f9f9f9;
+    }
+    
+    /* Container */
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid #eaeaea;
+    }
+    
+    .logo {
+      max-width: 200px;
+      height: auto;
+    }
+    
+    /* Content */
+    .content {
+      padding: 20px 0;
+    }
+    
+    h1 {
+      color: #2563eb;
+      margin-top: 0;
+      font-size: 24px;
+    }
+    
+    .highlight {
+      font-weight: bold;
+      color: #2563eb;
+    }
+    
+    /* Features */
+    .features {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #f3f4f6;
+      border-radius: 8px;
+    }
+    
+    .feature {
+      margin-bottom: 15px;
+      display: flex;
+    }
+    
+    .feature-icon {
+      flex: 0 0 30px;
+      font-size: 18px;
+      color: #2563eb;
+      margin-right: 10px;
+    }
+    
+    .feature-text {
+      flex: 1;
+    }
+    
+    /* CTA Button */
+    .cta-button {
+      display: block;
+      text-align: center;
+      margin: 30px auto;
+      padding: 12px 24px;
+      background-color: #2563eb;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: bold;
+      max-width: 200px;
+      transition: background-color 0.3s;
+    }
+    
+    .cta-button:hover {
+      background-color: #1d4ed8;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px 0;
+      border-top: 1px solid #eaeaea;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    
+    .social-links {
+      margin: 15px 0;
+    }
+    
+    .social-link {
+      display: inline-block;
+      margin: 0 10px;
+      color: #2563eb;
+      text-decoration: none;
+    }
+    
+    .unsubscribe {
+      color: #6b7280;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="https://projectrix.vercel.app/logo.png" alt="Projectrix Logo" class="logo">
+    </div>
+    
+    <div class="content">
+      <h1>Welcome to Projectrix, <%= name %>!</h1>
+      
+      <p>We're thrilled to have you join our community of passionate developers and creators. Projectrix is designed to help you turn your coding ideas into reality through collaboration and AI-powered project generation.</p>
+      
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🚀</div>
+          <div class="feature-text">
+            <strong>AI-Powered Project Ideas</strong>: Generate customized project ideas based on your tech stack and interests.
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">👥</div>
+          <div class="feature-text">
+            <strong>Find Collaborators</strong>: Connect with skilled developers who complement your abilities and share your vision.
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">🔄</div>
+          <div class="feature-text">
+            <strong>Streamlined Workflow</strong>: From idea generation to team formation, we've optimized the entire process.
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">🌐</div>
+          <div class="feature-text">
+            <strong>GitHub & Discord Integration</strong>: Seamlessly connect your projects with essential development tools.
+          </div>
+        </div>
+      </div>
+      
+      <p>Ready to start your first project? Click the button below to generate your first idea and kickstart your development journey!</p>
+      
+      <a href="https://projectrix.vercel.app/generate" class="cta-button">Generate Ideas</a>
+      
+      <p>If you have any questions or need assistance, don't hesitate to reach out to our support team at <a href="mailto:support@projectrix.io">support@projectrix.io</a>.</p>
+      
+      <p>Happy Coding,<br>The Projectrix Team</p>
+    </div>
+    
+    <div class="footer">
+      <div class="social-links">
+        <a href="https://github.com/projectrix" class="social-link">GitHub</a>
+        <a href="https://twitter.com/projectrix" class="social-link">Twitter</a>
+        <a href="https://discord.gg/projectrix" class="social-link">Discord</a>
+      </div>
+      
+      <p>You're receiving this email because you signed up for Projectrix. We'll send you occasional updates about new features and tips to make the most of our platform.</p>
+      
+      <p>
+        <a href="https://projectrix.vercel.app/unsubscribe?email=<%= userEmail %>" class="unsubscribe">Unsubscribe</a> |
+        <a href="https://projectrix.vercel.app/privacy" class="unsubscribe">Privacy Policy</a>
+      </p>
+      
+      <p>&copy; <%= year %> Projectrix. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>

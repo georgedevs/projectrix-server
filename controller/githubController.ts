@@ -7,6 +7,7 @@ import { redis } from '../utils/redis';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { getGitHubServiceForUser } from '../utils/githubService';
+import { Octokit } from '@octokit/rest';
 
 dotenv.config();
 

@@ -1,4 +1,4 @@
-// controller/userController.ts
+  // controller/userController.ts
 import { Request, Response, NextFunction } from 'express';
 import { CatchAsyncError } from '../middleware/catchAsyncErrors';
 import ErrorHandler from '../utils/ErrorHandler';
@@ -6,6 +6,7 @@ import { redis } from '../utils/redis';
 import { verifyFirebaseToken } from '../utils/fbauth';
 import User from '../models/userModel';
 import { initializeUserPlanLimits } from '../utils/pricingUtils';
+import { sendUserWelcomeEmail } from './emailController';
 
 // Register or login user with GitHub
 export const githubAuth = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
@@ -38,9 +39,11 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
 
       // Check if user already exists
       let user = await User.findOne({ githubId });
+      let isNewUser = false;
 
       if (!user) {
         console.log('Creating new user...');
+        isNewUser = true;
         // Create new user with default project limits
         const userData = {
           name: displayName || username,
@@ -56,7 +59,9 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
           createdAt: new Date(),
           lastLogin: new Date(),
           role: 'user',
-          plan: 'free' // Default to free plan
+          plan: 'free', // Default to free plan
+          newsletterSubscribed: true, // Subscribe to newsletters by default
+          emailVerified: !!email, // Mark as verified if email exists (from GitHub)
         };
         
         // Initialize user plan limits
@@ -64,8 +69,21 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
         
         user = await User.create(userData);
         console.log('New user created:', user._id);
+        
+        // Send welcome email for new users
+        if (email) {
+          // Send welcome email asynchronously (don't await)
+          sendUserWelcomeEmail(user._id.toString())
+            .then((result) => {
+              console.log(`Welcome email sent to ${email}: ${result ? 'Success' : 'Failed'}`);
+            })
+            .catch((error) => {
+              console.error('Error sending welcome email:', error);
+            });
+        }
       } else {
         console.log('Existing user found:', user._id);
+        
         await user.save();
       }
 
@@ -80,6 +98,7 @@ export const githubAuth = CatchAsyncError(async (req: Request, res: Response, ne
         success: true,
         user,
         tokenExpiresIn, // Include token expires info for frontend
+        isNewUser, // Include flag indicating if user is new
       });
     } catch (verificationError: any) {
       console.error('Token Verification Error:', {

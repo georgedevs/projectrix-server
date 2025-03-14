@@ -35,6 +35,9 @@ export interface IUser extends Document {
   collaborations: ICollaboration[];
   discordId?: string;
   discordUsername?: string;
+  newsletterSubscribed: boolean; 
+  emailVerified: boolean; 
+  lastEmailSent?: Date; 
   comparePassword(password: string): Promise<boolean>;
   SignAccessToken(): string;
   SignRefreshToken(): string;
@@ -89,7 +92,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
     type: Number,
     default: 0,
   },
-  publishedProjectsCount: {  // Track number of published projects
+  publishedProjectsCount: {
     type: Number,
     default: 0,
   },
@@ -111,11 +114,11 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
   },
   projectIdeasLeft: {
     type: Number,
-    default: 3  // Free plan starts with 3 project ideas
+    default: 3
   },
   collaborationRequestsLeft: { 
     type: Number,
-    default: 3  // Free plan starts with 3 collaboration requests per month
+    default: 3
   },
   planExpiryDate: {
     type: Date
@@ -149,7 +152,18 @@ const userSchema: Schema<IUser> = new mongoose.Schema({
       type: Date,
       default: Date.now
     }
-  }]
+  }],
+  newsletterSubscribed: {
+    type: Boolean,
+    default: true // Users are subscribed by default
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false // Email needs to be verified
+  },
+  lastEmailSent: {
+    type: Date
+  }
 });
 
 const User: Model<IUser> = mongoose.model("User", userSchema);

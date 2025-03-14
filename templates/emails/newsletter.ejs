@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= subject %></title>
+  <style>
+    /* Reset styles */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background-color: #f9f9f9;
+    }
+    
+    /* Container */
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid #eaeaea;
+    }
+    
+    .logo {
+      max-width: 200px;
+      height: auto;
+    }
+    
+    /* Content */
+    .content {
+      padding: 20px 0;
+    }
+    
+    h1 {
+      color: #2563eb;
+      margin-top: 0;
+      font-size: 24px;
+    }
+    
+    .highlight {
+      font-weight: bold;
+      color: #2563eb;
+    }
+    
+    /* Article */
+    .article {
+      margin: 25px 0;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #eaeaea;
+    }
+    
+    .article:last-child {
+      border-bottom: none;
+    }
+    
+    .article h2 {
+      margin-top: 0;
+      color: #1e40af;
+      font-size: 20px;
+    }
+    
+    .article-image {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    
+    .read-more {
+      display: inline-block;
+      margin-top: 10px;
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    
+    /* CTA Button */
+    .cta-button {
+      display: block;
+      text-align: center;
+      margin: 30px auto;
+      padding: 12px 24px;
+      background-color: #2563eb;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: bold;
+      max-width: 200px;
+      transition: background-color 0.3s;
+    }
+    
+    .cta-button:hover {
+      background-color: #1d4ed8;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px 0;
+      border-top: 1px solid #eaeaea;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    
+    .social-links {
+      margin: 15px 0;
+    }
+    
+    .social-link {
+      display: inline-block;
+      margin: 0 10px;
+      color: #2563eb;
+      text-decoration: none;
+    }
+    
+    .unsubscribe {
+      color: #6b7280;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="https://projectrix.vercel.app/logo.png" alt="Projectrix Logo" class="logo">
+    </div>
+    
+    <div class="content">
+      <h1>Hey <%= name %>,</h1>
+      
+      <p><%= introduction %></p>
+      
+      <% if (articles && articles.length > 0) { %>
+        <% articles.forEach(function(article) { %>
+          <div class="article">
+            <h2><%= article.title %></h2>
+            <% if (article.image) { %>
+              <img src="<%= article.image %>" alt="<%= article.title %>" class="article-image">
+            <% } %>
+            <p><%= article.content %></p>
+            <% if (article.link) { %>
+              <a href="<%= article.link %>" class="read-more">Read more →</a>
+            <% } %>
+          </div>
+        <% }) %>
+      <% } %>
+      
+      <% if (mainCta) { %>
+        <a href="<%= mainCta.link %>" class="cta-button"><%= mainCta.text %></a>
+      <% } %>
+      
+      <p>Thank you for being part of our community!</p>
+      
+      <p>Best regards,<br>The Projectrix Team</p>
+    </div>
+    
+    <div class="footer">
+      <div class="social-links">
+        <a href="https://github.com/projectrix" class="social-link">GitHub</a>
+        <a href="https://twitter.com/projectrix" class="social-link">Twitter</a>
+        <a href="https://discord.gg/projectrix" class="social-link">Discord</a>
+      </div>
+      
+      <p>You're receiving this email because you're subscribed to Projectrix newsletters.</p>
+      
+      <p>
+        <a href="https://projectrix.vercel.app/unsubscribe?email=<%= userEmail %>" class="unsubscribe">Unsubscribe</a> |
+        <a href="https://projectrix.vercel.app/privacy" class="unsubscribe">Privacy Policy</a>
+      </p>
+      
+      <p>&copy; <%= year %> Projectrix. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
